@@ -15,15 +15,15 @@ def main():
 
     ## Comment or Uncomment Depending on what we're plotting ##
 
-    # For plots vs time of day on individual days
-    N = np.array([36]) # Edit for plots of certain days
-    t = np.linspace(0, 24, 96) # 24-hour day split into 15 minute or .25 hour increments
-    day_name = 'Feb 5'
+    # # For plots vs time of day on individual days
+    # N = np.array([36]) # Edit for plots of certain days
+    # t = np.linspace(0, 24, 96) # 24-hour day split into 15 minute or .25 hour increments
+    # day_name = 'Feb 5'
 
-    # # For plots vs day of the year at individual times
-    # N = np.linspace(0, 365, 365)  # Day number where Jan 1st is 1
-    # t = np.array([12.5]) # This is local time
-    # day_name = ''
+    # For plots vs day of the year at individual times
+    N = np.linspace(0, 365, 365)  # Day number where Jan 1st is 1
+    t = np.array([12.5]) # This is local time
+    day_name = ''
 
     beta = 22 # Panel angle
     gamma = 46 # Panel azimuthal angle
@@ -78,6 +78,7 @@ def simulate(N, t, beta, gamma):
     L = 30.26 # deg Latitude of Austin
     altitude = .149 # km Altitude of Austin
     panel_eff = .157
+    inverter_eff = .965
     A = 1.64 * .99 # m^2
     I_0 = extraterrestrial_radiation(N) # W/m^2
     delta = solar_declination_angle(N) # deg
@@ -114,7 +115,7 @@ def simulate(N, t, beta, gamma):
                 I_cd[i] = diffuse_radiation(I_0, theta_z[i], tau_d[i], beta)
                 I_cb[i] = beam_radiation(I_0, tau_b[i], theta_i[i])
                 I[i] = I_cd[i] + I_cb[i]
-                Wdot_elec[i] = I[i] * panel_eff * A
+                Wdot_elec[i] = I[i] * panel_eff * A * inverter_eff
                 bd_ratio[i] = I_cb[i] / I_cd[i]
 
             else:
