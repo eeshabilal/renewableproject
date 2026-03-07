@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import math
+from scipy.optimize import minimize_scalar
 
 def main():
 
@@ -25,8 +26,12 @@ def main():
     t = np.array([12.5]) # This is local time
     day_name = ''
 
-    beta = 22 # Panel angle
+    beta = 22 # Panel angle for case 1 and 2
     gamma = 46 # Panel azimuthal angle
+
+    ## For 5 min resolution plots
+    t_5min = np.linspace(0, 24, 288) # 24 hours*12 increments per hour = 288 increments
+    days_in_year = np.arange(1,366)
 
     """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 
@@ -67,9 +72,55 @@ def main():
     # Plots vs day of the year
     if not day_name:
         plot_theta_i(N, theta_i_noon) # *
-        plot_energy(N, total_system_energy)
+        plot_energy(N, total_system_energy/1000) # Converts kWh to MWh for plotting
+    
+    # -----  Annual MWh Calculation -------
+    energy_case1_annual = 0
+    energy_case3_annual = 0
+    daily_mwh_case3 = []
 
+    for day in days_in_year:
+        # Case 1 Daily Energy
+        p1 = simulate(day,t_5min,beta,gamma)[0]
+        e1 = np.trapezoid(p1 * 960, t_5min) / 1e6 # MWh for 960 panels
+        energy_case1_annual += e1
 
+        # Case 3 Daily Energy
+        p3, irr3, beta3 = simulate_case_3(day, t_5min, gamma)
+        e3 = np.trapezoid(p3 * 960, t_5min) / 1e6 # MWh for 960 panels
+        energy_case3_annual += e3
+        daily_mwh_case3.append(e3)
+    
+    # Output Table of Annual Energy Production for Case 1 and Case 3
+    print("\n" + "="*45)
+    print(f"{'Case Study':<25} | {'Annual Energy in 2019 (MWh)':<15}")
+    print("-" * 45)
+    print(f"{'Case 1 (Fixed Tilt)':<25} | {energy_case1_annual:>15.4f}")
+    print(f"{'Case 3 (Tracking)':<25} | {energy_case3_annual:>15.4f}")
+    print("="*45)
+
+    
+    # ---- For Case 3: Optimized Vertical Tracking Angle ----
+    
+    # Irradiance and total system power delivery - December 21
+    power_dec, irr_dec, beta_dec = simulate_case_3(355, t_5min, gamma)
+    plot_solar_data(t_5min, power_dec, irr_dec, 'December 21 - Case 3 Optimized Vertical Tracking')
+
+    # Irradiance and total system power delivery - June 21
+    power_jun, irr_jun, beta_jun = simulate_case_3(172, t_5min, gamma)
+    plot_solar_data(t_5min, power_jun, irr_jun, 'June 21 - Case 3 Optimized Vertical Tracking')
+
+    # Plot Tilt Angle vs time of day - June 21
+    plt.figure(figsize=(10, 6))
+    plt.plot(t_5min, beta_jun, color='purple', linewidth=2, label='Optimized Beta Angle')
+    plt.title('Case 3 Optimized Panel Angle vs Time of Day (June 21)')
+    plt.ylabel("Tilt Angle (degrees)")
+    plt.xlabel("Time (hours)")
+    plt.grid(True, alpha=0.6)
+    plt.show()
+
+    # Plot total daily energy production vs day of the year
+    plot_energy(days_in_year, daily_mwh_case3)
 
 
 def simulate(N, t, beta, gamma):
@@ -280,7 +331,7 @@ def plot_energy(N, energy):
     plt.plot(N, energy, color='c', linewidth=2, label='Daily Energy Production')
 
     plt.xlabel('Day', fontweight='bold')
-    plt.ylabel('Energy Production (kWh)', fontweight='bold')
+    plt.ylabel('Energy Production (MWh)', fontweight='bold')
     plt.title('Daily Energy Production vs. Day of the Year')
     plt.xticks(np.arange(0, 366, 30))
 
@@ -306,6 +357,48 @@ def plot_power_delivery(t, power_output, day_name):
 
     plt.show()
 
+## PLACEHOLDER FOR CASE 2 FUNCTIONS ##
+
+## Case 3: Optimized Vertical Tracking Angle ##
+
+def optimized_beta (N, hour,gamma, L):
+
+    delta = solar_declination_angle(N)
+    sol_time = solar_time(N, hour)
+    omega = solar_hour_angle(sol_time)
+    theta_z = zenith_angle(L, delta, omega)
+
+    if theta_z >= math.pi/2:
+        return 0.0 # skips optimizaton math is sun is below horizon (night)
+
+    alpha = 90 - math.degrees(theta_z)
+    gamma_s = solar_azimuth_angle(delta, omega, alpha)
+
+    # Define the objecttive function to find beta that minimizes angle_of_incidence 
+    def objective(beta):
+        return angle_of_incidence(alpha, beta, gamma, gamma_s)
+    
+    res = minimize_scalar(objective, bounds=(0, 90), method='bounded')
+
+    return res.x
+
+def simulate_case_3(N, t_array, gamma):
+    
+    L = 30.26 # deg Latitude of Austin
+
+    power_day = np.zeros(np.size(t_array))
+    irradiance_day = np.zeros(np.size(t_array))
+    beta_day = np.zeros(np.size(t_array))
+
+    for i, hour in enumerate(t_array):
+        opt_beta = optimized_beta(N, hour, gamma, L)
+        beta_day[i] = opt_beta
+
+        res = simulate(N, np.array([hour]), opt_beta, gamma)
+
+        power_day[i] = res[0][0]
+        irradiance_day[i] = res[1][0]
+    return power_day, irradiance_day, beta_day
 
 if __name__ == '__main__':
     main()
