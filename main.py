@@ -99,6 +99,56 @@ def main():
     print(f"{'Case 3 (Tracking)':<25} | {energy_case3_annual:>15.4f}")
     print("="*45)
 
+    # ---- For Case 2: Effect of Panel Temperature ---- #
+    
+    # Plot irradiance and total system power - December 21 and June 21
+    temp_sets = {
+        "Dec 21 - Case 2":{"day": 355, "temps": [0,25,45]},
+        "Jun 21 - Case 2":{"day": 172, "temps": [25,45,85]}
+    }
+
+    for label, data in temp_sets.items():
+        fig, axis1 = plt.subplots(figsize=(10, 6))
+        axis2 = axis1.twinx()
+
+        day = data["day"]
+        irr_plot = None # To ensure irradiance is only plotted once per day since it doesn't change with temperature
+
+        for temp in data["temps"]:
+            power_temp, irr_temp, _, _ = simulate(day, t_5min, beta, gamma, T_cell=temp)
+            axis1.plot(t_5min, power_temp * 960 / 1000, label=f'Power at {temp}°C')
+
+            if irr_plot is None:
+                irr_plot = irr_temp
+
+        axis2.plot(t_5min, irr_plot / 1000, color='orange', linestyle='--', label='Irradiance')
+        axis1.set_xlabel('Time of Day (hours)', fontweight='bold')
+        axis1.set_ylabel('Total System Power Delivery (kW)', color='blue', fontweight='bold')
+        axis2.set_ylabel('Irradiance (kW/m^2)', color='orange', fontweight='bold')
+        plt.title(f"Irradiance and System Power: {label}", fontweight='bold')
+        axis1.grid(True, alpha=0.6)
+
+        lines1, labels1 = axis1.get_legend_handles_labels()
+        lines2, labels2 = axis2.get_legend_handles_labels()
+        axis1.legend(lines1 + lines2, labels1 + labels2, loc='upper left')
+        plt.show()
+    
+    # Plot total daily energy production vs day of the year
+    plt.figure(figsize=(10, 6))
+    temps = [0, 25, 45, 85]
+    for temp in temps:
+        daily_mwh_case2 = []
+        for day in days_in_year:
+            power_temp, _, _, _ = simulate(day, t_5min, beta, gamma, T_cell=temp)
+            e2 = np.trapezoid(power_temp * 960, t_5min) / 1e6 # MWh for 960 panels
+            daily_mwh_case2.append(e2)
+        plt.plot(days_in_year, daily_mwh_case2, label=f'Temp = {temp}°C')
+    plt.xlabel('Day of the Year', fontweight='bold')
+    plt.ylabel('Daily Energy Production (MWh)', fontweight='bold')
+    plt.title('Daily Energy Production vs. Day of the Year for Case 2', fontweight='bold')
+    plt.legend()
+    plt.grid(True)
+    plt.show()
     
     # ---- For Case 3: Optimized Vertical Tracking Angle ----
     
@@ -123,13 +173,14 @@ def main():
     plot_energy(days_in_year, daily_mwh_case3)
 
 
-def simulate(N, t, beta, gamma):
+def simulate(N, t, beta, gamma, T_cell = 25):
 
     # constants
     L = 30.26 # deg Latitude of Austin
     altitude = .149 # km Altitude of Austin
-    panel_eff = .157
+    panel_eff = .157 # efficiency at 25C cell temperature
     inverter_eff = .965
+    power_temp_coeff = -0.0045 # Power temperature coefficient from 25C 
     A = 1.64 * .99 # m^2
     I_0 = extraterrestrial_radiation(N) # W/m^2
     delta = solar_declination_angle(N) # deg
@@ -166,7 +217,9 @@ def simulate(N, t, beta, gamma):
                 I_cd[i] = diffuse_radiation(I_0, theta_z[i], tau_d[i], beta)
                 I_cb[i] = beam_radiation(I_0, tau_b[i], theta_i[i])
                 I[i] = I_cd[i] + I_cb[i]
-                Wdot_elec[i] = I[i] * panel_eff * A * inverter_eff
+
+                P_25C = I[i] * panel_eff * A *inverter_eff # Power at 25C cell temperature
+                Wdot_elec[i] = P_25C * (1 + power_temp_coeff * (T_cell - 25)) # Adjusted for cell temperature
                 bd_ratio[i] = I_cb[i] / I_cd[i]
 
             else:
@@ -266,7 +319,7 @@ def plot_solar_data(t, power_array, irradiance_array, day_name):
     # Left Axis: Total System Power (kW)
     color_power = 'tab:blue'
     ax1.set_xlabel('Time (hours)')
-    ax1.set_ylabel('Total System Power (kW/m^2)', color=color_power, fontweight='bold')
+    ax1.set_ylabel('Total System Power Delivery (kW)', color=color_power, fontweight='bold')
     ax1.plot(t, power_array * 960 / 1000, color=color_power, label='Total Power Output', linewidth=2)
     ax1.tick_params(axis='y', labelcolor=color_power)
     ax1.set_xticks(np.arange(0, 25, 1))
@@ -357,7 +410,8 @@ def plot_power_delivery(t, power_output, day_name):
 
     plt.show()
 
-## PLACEHOLDER FOR CASE 2 FUNCTIONS ##
+
+    ## also need to compare to actual 2019 data!
 
 ## Case 3: Optimized Vertical Tracking Angle ##
 
