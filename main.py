@@ -21,12 +21,10 @@ def main():
 
     # # For plots vs time of day on individual days
     # N = np.array([355]) # Edit for plots of certain days
-    # t = np.linspace(0, 24, 288)
     # day_name = 'Dec 21'
 
     # For plots vs day of the year at individual times
     N = np.linspace(0, 365, 365)  # Day number where Jan 1st is 1
-    t = np.array([12.5]) # This is local time
     day_name = ''
 
     beta = 22 # Panel angle for case 1 and 2
@@ -41,21 +39,39 @@ def main():
     cleaned_2019_data = get_cleaned_solar_power_arrays('PEC 15 minute data for 2019.csv', N)
     annual_actual_energy = get_annual_daily_energy_array('PEC 15 minute data for 2019.csv')
 
-    total_system_power = np.zeros((np.size(N), np.size(t))) # W/m^2
-    irradiance = np.zeros((np.size(N), np.size(t))) # W/m^2
-    bd_ratio = np.zeros((np.size(N), np.size(t)))
-    theta_i_noon = np.zeros((np.size(N), np.size(t))) # deg
-    total_system_energy = np.zeros((np.size(N), np.size(t))) # kWh
-    hours_in_day = np.linspace(0, 24, 96)
+
+    if not day_name:
+        t = np.zeros(len(N))
+        for i, day in enumerate(N):
+            t[i] = local_time(day, 12)
+        theta_i_noon = np.zeros(len(N)) # deg
+        total_system_energy = np.zeros(len(N)) # kWh
+    else:
+        t = t_5min
+        total_system_power = np.zeros((np.size(N), np.size(t))) # W
+        irradiance = np.zeros((np.size(N), np.size(t))) # W/m^2
+        bd_ratio = np.zeros((np.size(N), np.size(t)))
 
     i = 0
     for day in N:
-        total_system_power[i] = simulate(day, t, beta, gamma)[0]
-        irradiance[i] = simulate(day, t, beta, gamma)[1]
-        bd_ratio[i]= simulate(day, t, beta, gamma)[2]
-        theta_i_noon[i] = simulate(day, t, beta, gamma)[3]
+        if day_name:
+            # Standard Time-of-Day simulation
+            res = simulate(day, t, beta, gamma)
+            total_system_power[i] = res[0]
+            irradiance[i] = res[1]
+            bd_ratio[i] = res[2]
+        else:
+            # Day-of-Year simulation:
+            # Use the specific solar noon 't[i]' calculated for THIS day
+            # Pass it as a single-element array [t[i]]
+            res_noon = simulate(day, np.array([t[i]]), beta, gamma)
 
-        total_system_energy[i] = np.trapezoid(simulate(day, hours_in_day, beta, gamma)[0], hours_in_day)
+            # Extract the scalar value [0] from the returned array
+            theta_i_noon[i] = res_noon[3][0]
+
+            # Energy always integrates over the full 24-hour day (t_15min)
+        p_day_array = simulate(day, t_15min, beta, gamma)[0]
+        total_system_energy[i] = np.trapezoid(p_day_array, t_15min)
         i += 1
 
     # simulate function indexing guide
@@ -256,6 +272,22 @@ def solar_time(N, standard_time):
     )
 
     return standard_time + (4 * (long_std - long_loc) + ET) / 60  # In hours
+
+def local_time(N, solar_time):
+    # N is day number, standard_time is in hours
+    # Returns the solar time in hours
+
+    tau = math.radians( 360 * N / 365)
+    long_std = 90 # deg
+    long_loc = 97.74 # deg
+    ET = (
+        - 7.3412 * math.sin(tau) + .4944 * math.cos(tau)
+        - 9.3795 * math.sin(2 * tau) - 3.2568 * math.cos(2 * tau)
+        - .3179 * math.sin(3 * tau) - .0774 * math.cos(3 * tau)
+        - .1739 * math.sin(4 * tau) - .1283 * math.cos(4 * tau)
+    )
+
+    return solar_time - (4 * (long_std - long_loc) + ET) / 60  # In hours
 
 def solar_hour_angle(solar_time): # omega
     return solar_time * 15 - 180 # deg
