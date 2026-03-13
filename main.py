@@ -55,23 +55,19 @@ def main():
     i = 0
     for day in N:
         if day_name:
-            # Standard Time-of-Day simulation
+            # Plots against time of day
             res = simulate(day, t, beta, gamma)
             total_system_power[i] = res[0]
             irradiance[i] = res[1]
             bd_ratio[i] = res[2]
         else:
-            # Day-of-Year simulation:
-            # Use the specific solar noon 't[i]' calculated for THIS day
-            # Pass it as a single-element array [t[i]]
+            # Plots against day of year
             res_noon = simulate(day, np.array([t[i]]), beta, gamma)
 
-            # Extract the scalar value [0] from the returned array
             theta_i_noon[i] = res_noon[3][0]
 
-            # Energy always integrates over the full 24-hour day (t_15min)
-        p_day_array = simulate(day, t_15min, beta, gamma)[0]
-        total_system_energy[i] = np.trapezoid(p_day_array, t_15min)
+        p_day_array = simulate(day, t_5min, beta, gamma)[0]
+        total_system_energy[i] = np.trapezoid(p_day_array, t_5min)
         i += 1
 
     # simulate function indexing guide
