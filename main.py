@@ -14,38 +14,34 @@ def main():
     # Feb 24, N = 55
     # Jun 21, N = 172
     # Dec 21, N = 355
-    # Solar noon @ 12.5 Austin Local Time
     t_15min = np.linspace(0, 24, 96)
+    t_5min = np.linspace(0, 24, 288) # 24 hours*12 increments per hour = 288 increments
+    days_in_year = np.arange(1,366)
 
     ## Comment or Uncomment Depending on what we're plotting ##
 
-    # # For plots vs time of day on individual days
-    # N = np.array([355]) # Edit for plots of certain days
-    # day_name = 'Dec 21'
+    # For plots vs time of day on individual days
+    N = np.array([36]) # Edit for plots of certain days
+    day_name = 'Feb 5'
 
     # For plots vs day of the year at individual times
-    N = np.linspace(0, 365, 365)  # Day number where Jan 1st is 1
-    day_name = ''
+    # N = np.linspace(0, 365, 365)  # Day number where Jan 1st is 1
+    # day_name = ''
 
     beta = 22 # Panel angle for case 1 and 2
     gamma = 46 # Panel azimuthal angle
-
-    ## For 5 min resolution plots
-    t_5min = np.linspace(0, 24, 288) # 24 hours*12 increments per hour = 288 increments
-    days_in_year = np.arange(1,366)
 
     """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 
     cleaned_2019_data = get_cleaned_solar_power_arrays('PEC 15 minute data for 2019.csv', N)
     annual_actual_energy = get_annual_daily_energy_array('PEC 15 minute data for 2019.csv')
 
-
+    total_system_energy = np.zeros(len(N))  # kWh
     if not day_name:
         t = np.zeros(len(N))
         for i, day in enumerate(N):
             t[i] = local_time(day, 12)
         theta_i_noon = np.zeros(len(N)) # deg
-        total_system_energy = np.zeros(len(N)) # kWh
     else:
         t = t_5min
         total_system_power = np.zeros((np.size(N), np.size(t))) # W
@@ -85,7 +81,7 @@ def main():
         plot_bd_ratio(t, bd_ratio[0], day_name) # *
 
     if day_name == 'Feb 5':
-        plot_power_delivery(t, total_system_power[0], day_name)
+        plot_power_delivery(t, total_system_power[0], cleaned_2019_data[N[0]], day_name)
 
     # Plots vs day of the year
     if not day_name:
@@ -431,16 +427,21 @@ def plot_energy(N, energy, actual_energy):
 
     plt.show()
 
-def plot_power_delivery(t, power_output, day_name):
+def plot_power_delivery(t, power_array, real_power_array, day_name):
 
-    plt.figure(figsize=(10, 6))
-    plt.plot(t, power_output * 960 / 1e6, color='m', linewidth=2, label='Power Output')
+    t_15min = np.linspace(0, 24, 96)
+    fig, ax1 = plt.subplots(figsize=(10, 6))
 
-    plt.xlabel('Time (hours)', fontweight='bold')
-    plt.ylabel('Power Output (MW)', fontweight='bold')
-    plt.title(f'Power Output vs. Time of Day ({day_name})')
-    plt.xticks(np.arange(0, 25, 1))
-
+    # Left Axis: Total System Power (kW
+    ax1.set_xlabel('Time (hours)')
+    ax1.set_ylabel('Total System Power Delivery (kW)', fontweight='bold')
+    ax1.plot(t, power_array * 960 / 1000, color='m', label='Total Power Output', linewidth=2)
+    if real_power_array.any():
+        ax1.plot(t_15min, real_power_array, linestyle = ':', label='2019 Power Output', linewidth=2)
+    ax1.tick_params(axis='y')
+    ax1.set_xticks(np.arange(0, 25, 1))
+    ax1.grid(True, alpha=0.6)
+    plt.title(f'Total System Power Delivery vs. Time ({day_name})')
     plt.grid(True, alpha=0.6)
     plt.legend()
     plt.tight_layout()
