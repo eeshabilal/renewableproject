@@ -1,7 +1,9 @@
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 import math
 from scipy.optimize import minimize_scalar
+from datetime import datetime, timedelta
 
 def main():
 
@@ -13,13 +15,14 @@ def main():
     # Jun 21, N = 172
     # Dec 21, N = 355
     # Solar noon @ 12.5 Austin Local Time
+    t_15min = np.linspace(0, 24, 96)
 
     ## Comment or Uncomment Depending on what we're plotting ##
 
     # # For plots vs time of day on individual days
-    # N = np.array([36]) # Edit for plots of certain days
-    # t = np.linspace(0, 24, 96) # 24-hour day split into 15 minute or .25 hour increments
-    # day_name = 'Feb 5'
+    # N = np.array([355]) # Edit for plots of certain days
+    # t = np.linspace(0, 24, 288)
+    # day_name = 'Dec 21'
 
     # For plots vs day of the year at individual times
     N = np.linspace(0, 365, 365)  # Day number where Jan 1st is 1
@@ -34,6 +37,9 @@ def main():
     days_in_year = np.arange(1,366)
 
     """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
+
+    cleaned_2019_data = get_cleaned_solar_power_arrays('PEC 15 minute data for 2019.csv', N)
+    annual_actual_energy = get_annual_daily_energy_array('PEC 15 minute data for 2019.csv')
 
     total_system_power = np.zeros((np.size(N), np.size(t))) # W/m^2
     irradiance = np.zeros((np.size(N), np.size(t))) # W/m^2
@@ -63,7 +69,7 @@ def main():
 
     # Plots vs time of day
     if day_name:
-        plot_solar_data(t, total_system_power[0], irradiance[0], day_name)
+        plot_solar_data(t, total_system_power[0], cleaned_2019_data[N[0]], irradiance[0], day_name)
         plot_bd_ratio(t, bd_ratio[0], day_name) # *
 
     if day_name == 'Feb 5':
@@ -72,7 +78,7 @@ def main():
     # Plots vs day of the year
     if not day_name:
         plot_theta_i(N, theta_i_noon) # *
-        plot_energy(N, total_system_energy/1000) # Converts kWh to MWh for plotting
+        plot_energy(N, total_system_energy/1000, annual_actual_energy/1000) # Converts kWh to MWh for plotting
     
     # -----  Annual MWh Calculation -------
     energy_case1_annual = 0
@@ -120,7 +126,7 @@ def main():
 
             if irr_plot is None:
                 irr_plot = irr_temp
-
+        axis1.plot(t_15min, cleaned_2019_data[N[day]], linestyle=':', label='2019 Power')
         axis2.plot(t_5min, irr_plot / 1000, color='orange', linestyle='--', label='Irradiance')
         axis1.set_xlabel('Time of Day (hours)', fontweight='bold')
         axis1.set_ylabel('Total System Power Delivery (kW)', color='blue', fontweight='bold')
@@ -143,6 +149,7 @@ def main():
             e2 = np.trapezoid(power_temp * 960, t_5min) / 1e6 # MWh for 960 panels
             daily_mwh_case2.append(e2)
         plt.plot(days_in_year, daily_mwh_case2, label=f'Temp = {temp}°C')
+    plt.plot(days_in_year, annual_actual_energy/1000, label='2019 Energy')
     plt.xlabel('Day of the Year', fontweight='bold')
     plt.ylabel('Daily Energy Production (MWh)', fontweight='bold')
     plt.title('Daily Energy Production vs. Day of the Year for Case 2', fontweight='bold')
@@ -154,11 +161,11 @@ def main():
     
     # Irradiance and total system power delivery - December 21
     power_dec, irr_dec, beta_dec = simulate_case_3(355, t_5min, gamma)
-    plot_solar_data(t_5min, power_dec, irr_dec, 'December 21 - Case 3 Optimized Vertical Tracking')
+    plot_solar_data(t_5min, power_dec, cleaned_2019_data[N[355]], irr_dec, 'December 21 - Case 3 Optimized Vertical Tracking')
 
     # Irradiance and total system power delivery - June 21
     power_jun, irr_jun, beta_jun = simulate_case_3(172, t_5min, gamma)
-    plot_solar_data(t_5min, power_jun, irr_jun, 'June 21 - Case 3 Optimized Vertical Tracking')
+    plot_solar_data(t_5min, power_jun, cleaned_2019_data[N[172]], irr_jun, 'June 21 - Case 3 Optimized Vertical Tracking')
 
     # Plot Tilt Angle vs time of day - June 21
     plt.figure(figsize=(10, 6))
@@ -170,7 +177,7 @@ def main():
     plt.show()
 
     # Plot total daily energy production vs day of the year
-    plot_energy(days_in_year, daily_mwh_case3)
+    # plot_energy(days_in_year, daily_mwh_case3, annual_actual_energy/1000)
 
 
 def simulate(N, t, beta, gamma, T_cell = 25):
@@ -311,9 +318,9 @@ def beam_radiation(I_0, tau_b, theta_i):
     # theta_z = math.radians(theta_z) # uncomment for testing hand calcs w degrees
     return I_0 * tau_b * math.cos(theta_i)
 
-def plot_solar_data(t, power_array, irradiance_array, day_name):
+def plot_solar_data(t, power_array, real_power_array, irradiance_array, day_name):
     # Plots Total System Power and Irradiance on a dual y-axis vs time of day
-
+    t_15min = np.linspace(0, 24, 96)
     fig, ax1 = plt.subplots(figsize=(10, 6))
 
     # Left Axis: Total System Power (kW)
@@ -321,6 +328,8 @@ def plot_solar_data(t, power_array, irradiance_array, day_name):
     ax1.set_xlabel('Time (hours)')
     ax1.set_ylabel('Total System Power Delivery (kW)', color=color_power, fontweight='bold')
     ax1.plot(t, power_array * 960 / 1000, color=color_power, label='Total Power Output', linewidth=2)
+    if real_power_array.any():
+        ax1.plot(t_15min, real_power_array, color=color_power, linestyle = ':', label='2019 Power Output', linewidth=2)
     ax1.tick_params(axis='y', labelcolor=color_power)
     ax1.set_xticks(np.arange(0, 25, 1))
     ax1.grid(True, alpha=0.6)
@@ -329,7 +338,7 @@ def plot_solar_data(t, power_array, irradiance_array, day_name):
     ax2 = ax1.twinx()
     color_irr = 'tab:orange'
     ax2.set_ylabel('Irradiance (kW/m^2)', color=color_irr, fontweight='bold')
-    ax2.plot(t, irradiance_array / 1000, color=color_irr, label='Irradiance', linestyle='--')
+    ax2.plot(t, irradiance_array / 1000, color=color_irr, label='Irradiance', linestyle='--', linewidth=2)
     ax2.tick_params(axis='y', labelcolor=color_irr)
 
     # Legends and Title
@@ -378,11 +387,11 @@ def plot_theta_i(N, theta_i_noon):
 
     plt.show()
 
-def plot_energy(N, energy):
+def plot_energy(N, energy, actual_energy):
 
     plt.figure(figsize=(10, 6))
     plt.plot(N, energy, color='c', linewidth=2, label='Daily Energy Production')
-
+    plt.plot(N, actual_energy, color='b', linewidth=2, label='2019 Energy Production')
     plt.xlabel('Day', fontweight='bold')
     plt.ylabel('Energy Production (MWh)', fontweight='bold')
     plt.title('Daily Energy Production vs. Day of the Year')
@@ -453,6 +462,87 @@ def simulate_case_3(N, t_array, gamma):
         power_day[i] = res[0][0]
         irradiance_day[i] = res[1][0]
     return power_day, irradiance_day, beta_day
+
+
+def get_cleaned_solar_power_arrays(file_path, n_array):
+    """
+    Extracts and cleans solar power data for an array of day numbers (N).
+
+    Parameters:
+    file_path (str): Path to 'PEC 15 minute data for 2019.csv'
+    n_array (list or np.array): Array of day numbers (e.g., [55, 172, 355])
+
+    Returns:
+    dict: { N: np.array([96 values in kW]) }
+    """
+    # Load the dataset
+    df = pd.read_csv(file_path)
+    df['Date & Time'] = pd.to_datetime(df['Date & Time'])
+    df = df.sort_values(by='Date & Time')
+
+    # Ensure n_array is iterable if a single integer is passed
+    if isinstance(n_array, (int, np.integer)):
+        n_array = [n_array]
+
+    results = {}
+    start_date = datetime(2019, 1, 1)  # 2019 was a non-leap year
+
+    for n in n_array:
+        # Convert the day number N to the actual calendar date
+        target_date = (start_date + timedelta(days=int(n) - 1)).date()
+
+        # Filter for the specific day
+        day_df = df[df['Date & Time'].dt.date == target_date]
+
+        if not day_df.empty:
+            # Extract 'Solar [kW]' and remove nighttime parasitic noise (values < 0)
+            raw_power = day_df['Solar [kW]'].values
+            cleaned_power = np.maximum(raw_power, 0)
+
+            # Store in the dictionary indexed by N
+            results[n] = cleaned_power
+        else:
+            print(f"Warning: No data found for N={n} (Date: {target_date})")
+
+    return results
+    # Example Usage for your report:
+    # n_values = [55, 172, 355]
+    # cleaned_data_dict = get_cleaned_solar_power_arrays('PEC 15 minute data for 2019.csv', n_values)
+
+
+def get_annual_daily_energy_array(file_path):
+    """
+    Calculates total energy (kWh) for every day of the year from the CSV.
+
+    Returns:
+    np.array: A 365-element array where index 0 is Jan 1st (N=1).
+    """
+    # 1. Load the dataset
+    df = pd.read_csv(file_path)
+    df['Date & Time'] = pd.to_datetime(df['Date & Time'])
+
+    # 2. Convert Power (kW) to Energy (kWh) per interval
+    # Since intervals are 15 minutes, Energy = Power * (15/60)
+    # We also clamp values at 0 to remove nighttime parasitic draw
+    df['kWh_interval'] = np.maximum(df['Solar [kW]'], 0) * 0.25
+
+    # 3. Sum energy by calendar date
+    df['date_only'] = df['Date & Time'].dt.date
+    daily_sums = df.groupby('date_only')['kWh_interval'].sum()
+
+    # 4. Map sums to a 365-day array (to handle any potential missing days)
+    # 2019 was a non-leap year.
+    start_date = datetime(2019, 1, 1).date()
+    annual_energy_array = np.zeros(365)
+
+    for date, energy in daily_sums.items():
+        # Calculate N (Day of Year)
+        n = (date - start_date).days + 1
+        if 1 <= n <= 365:
+            # Store in 0-indexed array (N=1 at index 0)
+            annual_energy_array[n - 1] = energy
+
+    return annual_energy_array
 
 if __name__ == '__main__':
     main()
