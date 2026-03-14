@@ -24,7 +24,7 @@ def main():
     N = np.array([36]) # Edit for plots of certain days
     day_name = 'Feb 5'
 
-    # For plots vs day of the year at individual times
+    # # For plots vs day of the year at individual times
     # N = np.linspace(0, 365, 365)  # Day number where Jan 1st is 1
     # day_name = ''
 
@@ -33,8 +33,9 @@ def main():
 
     """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 
-    cleaned_2019_data = get_cleaned_solar_power_arrays('PEC 15 minute data for 2019.csv', N)
+    cleaned_2019_data = get_power_outputs_2019('PEC 15 minute data for 2019.csv', N)
     annual_actual_energy = get_annual_daily_energy_array('PEC 15 minute data for 2019.csv')
+    cleaned_feb_data = get_power_outputs_2026('pec 15 minute data for 2.5.2026.csv')
 
     total_system_energy = np.zeros(len(N))  # kWh
     if not day_name:
@@ -81,7 +82,7 @@ def main():
         plot_bd_ratio(t, bd_ratio[0], day_name) # *
 
     if day_name == 'Feb 5':
-        plot_power_delivery(t, total_system_power[0], cleaned_2019_data[N[0]], day_name)
+        plot_power_delivery(t, total_system_power[0], cleaned_feb_data, day_name)
 
     # Plots vs day of the year
     if not day_name:
@@ -437,7 +438,7 @@ def plot_power_delivery(t, power_array, real_power_array, day_name):
     ax1.set_ylabel('Total System Power Delivery (kW)', fontweight='bold')
     ax1.plot(t, power_array * 960 / 1000, color='m', label='Total Power Output', linewidth=2)
     if real_power_array.any():
-        ax1.plot(t_15min, real_power_array, linestyle = ':', label='2019 Power Output', linewidth=2)
+        ax1.plot(t_15min, real_power_array, linestyle = ':', label='Actual PEC Power Output', linewidth=2)
     ax1.tick_params(axis='y')
     ax1.set_xticks(np.arange(0, 25, 1))
     ax1.grid(True, alpha=0.6)
@@ -493,7 +494,7 @@ def simulate_case_3(N, t_array, gamma):
     return power_day, irradiance_day, beta_day
 
 
-def get_cleaned_solar_power_arrays(file_path, n_array):
+def get_power_outputs_2019(file_path, n_array):
     """
     Extracts and cleans solar power data for an array of day numbers (N).
 
@@ -534,9 +535,29 @@ def get_cleaned_solar_power_arrays(file_path, n_array):
             print(f"Warning: No data found for N={n} (Date: {target_date})")
 
     return results
-    # Example Usage for your report:
-    # n_values = [55, 172, 355]
-    # cleaned_data_dict = get_cleaned_solar_power_arrays('PEC 15 minute data for 2019.csv', n_values)
+
+
+def get_power_outputs_2026(file_path):
+    """
+    Extracts and cleans solar power data from the 2026 PEC CSV.
+
+    Returns:
+    np.array: Cleaned solar power values in kW.
+    """
+    # 1. Load the CSV
+    df = pd.read_csv(file_path)
+
+    # 2. Convert to datetime and sort (the 2026 file is currently in reverse order)
+    df['Date & Time'] = pd.to_datetime(df['Date & Time'])
+    df = df.sort_values(by='Date & Time')
+
+    # 3. Extract the 'Solar [kW]' column
+    raw_power = df['Solar [kW]'].values
+
+    # 4. Clean nighttime parasitic noise (clamping values < 0 to 0)
+    cleaned_power = np.maximum(raw_power, 0)
+
+    return cleaned_power
 
 
 def get_annual_daily_energy_array(file_path):
