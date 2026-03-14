@@ -32,8 +32,8 @@ def main():
     gamma = 46 # Panel azimuthal angle
 
     """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
-
-    cleaned_2019_data = get_cleaned_solar_power_arrays('PEC 15 minute data for 2019.csv', N)
+    days_needed = np.unique(np.append(N, [172, 355])).tolist() # Adding june 21 and dec 21 for case 2 and 3 plots
+    cleaned_2019_data = get_cleaned_solar_power_arrays('PEC 15 minute data for 2019.csv', days_needed)
     annual_actual_energy = get_annual_daily_energy_array('PEC 15 minute data for 2019.csv')
 
     total_system_energy = np.zeros(len(N))  # kWh
@@ -105,12 +105,15 @@ def main():
         energy_case3_annual += e3
         daily_mwh_case3.append(e3)
     
-    # Output Table of Annual Energy Production for Case 1 and Case 3
+    # Output Table of Annual Energy Production for Case 1 and Case 3 compared to 2019
+    
+    energy_actual_annual = np.sum(annual_actual_energy) / 1000 # MWh of 2019 actual energy
     print("\n" + "="*45)
-    print(f"{'Case Study':<25} | {'Annual Energy in 2019 (MWh)':<15}")
+    print(f"{'Case Study':<25} | {'Annual Energy (MWh)':<15}")
     print("-" * 45)
-    print(f"{'Case 1 (Fixed Tilt)':<25} | {energy_case1_annual:>15.4f}")
+    print(f"{'Case 1 (Base; Fixed Tilt)':<25} | {energy_case1_annual:>15.4f}")
     print(f"{'Case 3 (Tracking)':<25} | {energy_case3_annual:>15.4f}")
+    print(f"{'2019 Actual Data':<25} | {energy_actual_annual:>15.4f}")
     print("="*45)
 
     # ---- For Case 2: Effect of Panel Temperature ---- #
@@ -134,7 +137,7 @@ def main():
 
             if irr_plot is None:
                 irr_plot = irr_temp
-        axis1.plot(t_15min, cleaned_2019_data[N[day]], linestyle=':', label='2019 Power')
+        axis1.plot(t_15min, cleaned_2019_data[day], linestyle=':', label='2019 Power')
         axis2.plot(t_5min, irr_plot / 1000, color='orange', linestyle='--', label='Irradiance')
         axis1.set_xlabel('Time of Day (hours)', fontweight='bold')
         axis1.set_ylabel('Total System Power Delivery (kW)', color='blue', fontweight='bold')
@@ -169,11 +172,11 @@ def main():
     
     # Irradiance and total system power delivery - December 21
     power_dec, irr_dec, beta_dec = simulate_case_3(355, t_5min, gamma)
-    plot_solar_data(t_5min, power_dec, cleaned_2019_data[N[355]], irr_dec, 'December 21 - Case 3 Optimized Vertical Tracking')
+    plot_solar_data(t_5min, power_dec, cleaned_2019_data[355], irr_dec, 'December 21 - Case 3 Optimized Vertical Tracking')
 
     # Irradiance and total system power delivery - June 21
     power_jun, irr_jun, beta_jun = simulate_case_3(172, t_5min, gamma)
-    plot_solar_data(t_5min, power_jun, cleaned_2019_data[N[172]], irr_jun, 'June 21 - Case 3 Optimized Vertical Tracking')
+    plot_solar_data(t_5min, power_jun, cleaned_2019_data[172], irr_jun, 'June 21 - Case 3 Optimized Vertical Tracking')
 
     # Plot Tilt Angle vs time of day - June 21
     plt.figure(figsize=(10, 6))
@@ -185,7 +188,7 @@ def main():
     plt.show()
 
     # Plot total daily energy production vs day of the year
-    # plot_energy(days_in_year, daily_mwh_case3, annual_actual_energy/1000)
+    plot_energy(days_in_year, daily_mwh_case3, annual_actual_energy/1000, title='Daily Energy Production vs. Day of the Year for Case 3')
 
 
 def simulate(N, t, beta, gamma, T_cell = 25):
@@ -411,14 +414,14 @@ def plot_theta_i(N, theta_i_noon):
 
     plt.show()
 
-def plot_energy(N, energy, actual_energy):
+def plot_energy(N, energy, actual_energy, title = 'Daily Energy Production vs. Day of the Year'):
 
     plt.figure(figsize=(10, 6))
     plt.plot(N, energy, color='c', linewidth=2, label='Daily Energy Production')
     plt.plot(N, actual_energy, color='b', linewidth=2, label='2019 Energy Production')
     plt.xlabel('Day', fontweight='bold')
     plt.ylabel('Energy Production (MWh)', fontweight='bold')
-    plt.title('Daily Energy Production vs. Day of the Year')
+    plt.title(title)
     plt.xticks(np.arange(0, 366, 30))
 
     plt.grid(True, alpha=0.6)
