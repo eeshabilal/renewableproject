@@ -33,9 +33,8 @@ def main():
 
     """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
     days_needed = np.unique(np.append(N, [172, 355])).tolist() # Adding june 21 and dec 21 for case 2 and 3 plots
-    cleaned_2019_data = get_cleaned_solar_power_arrays('PEC 15 minute data for 2019.csv', days_needed)
 
-    cleaned_2019_data = get_power_outputs_2019('PEC 15 minute data for 2019.csv', N)
+    cleaned_2019_data = get_power_outputs_2019('PEC 15 minute data for 2019.csv', days_needed)
     annual_actual_energy = get_annual_daily_energy_array('PEC 15 minute data for 2019.csv')
     cleaned_feb_data = get_power_outputs_2026('pec 15 minute data for 2.5.2026.csv')
 
@@ -476,7 +475,7 @@ def optimized_beta (N, hour,gamma, L):
     def objective(beta):
         return angle_of_incidence(alpha, beta, gamma, gamma_s)
     
-    res = minimize_scalar(objective, bounds=(0, 90), method='bounded')
+    res = minimize_scalar(objective, bounds=(-90, 90), method='bounded')
 
     return res.x
 
