@@ -598,5 +598,40 @@ def get_annual_daily_energy_array(file_path):
 
     return annual_energy_array
 
+#------ Setting Up Code for Case 6 (Draft) -------#
+# ---- System constants ----
+BASE_PANELS = 960
+#PANEL_RATING = ?
+
+# Battery
+PACK_CAPACITY = 210  # kWh per pack
+BATTERY_EFF = 1.0    # assume ideal unless told otherwise
+COST = 115 #$/kWh 
+
+# Time
+DT = 5/60  # 5-minute timestep in hours
+
+#  Idealized PEC power use for a typical summer and winter day 
+# summer days go from June 1 to Nov. 20 and the winter days are from Nov. 21 to May 31
+def load_model(t, is_summer=False):
+    if not is_summer:
+        # Winter
+        if 0 <= t < 6:
+            return 200
+        elif 6 <= t < 18:
+            return 200
+        else:
+            return 300
+    else:
+        # Summer
+        if 0 <= t < 6:
+            return 200
+        elif 6 <= t < 19:
+            return 220
+        else:
+            return 580
+
+
+
 if __name__ == '__main__':
     main()
