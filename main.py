@@ -599,39 +599,146 @@ def get_annual_daily_energy_array(file_path):
     return annual_energy_array
 
 #------ Setting Up Code for Case 6 (Draft) -------#
-# ---- System constants ----
-BASE_PANELS = 960
-#PANEL_RATING = ?
-
-# Battery
-PACK_CAPACITY = 210  # kWh per pack
-BATTERY_EFF = 1.0    # assume ideal unless told otherwise
-COST = 115 #$/kWh 
+original_Panels = 960
+pack_capacity = 210  # kWh per tesla power pack
+battery_efficiency = 1.0    # assume ideal unless told otherwise
+battery_cost = 115 #$/kWh 
 
 # Time
 DT = 5/60  # 5-minute timestep in hours
 
+# Adjust for Daylight Savings Time (if needed)
+def apply_dst(t, date):
+    year = date.year
+
+    # DST starts 2nd Sunday in March
+    march = datetime(year, 3, 1)
+    first_sunday_march = march + timedelta(days=(6 - march.weekday()) % 7)
+    second_sunday_march = first_sunday_march + timedelta(days=7)
+
+    #DST ends 1st Sunday in November
+    november = datetime(year, 11, 1)
+    first_sunday_november = november + timedelta(days=(6 - november.weekday()) % 7)
+
+    if second_sunday_march <= date < first_sunday_november:
+        return t - 1  # shift solar time back 1 hour
+    else:
+        return t
+    
 #  Idealized PEC power use for a typical summer and winter day 
 # summer days go from June 1 to Nov. 20 and the winter days are from Nov. 21 to May 31
-def load_model(t, is_summer=False):
-    if not is_summer:
+def load_model(t, date):
+    month = date.month
+    day = date.day
+
+    is_summer = (
+        (month > 6 and month < 11) or
+        (month == 6 and day >= 1) or
+        (month == 11 and day <= 20)
+    )
+
+    if is_summer:
         # Winter
         if 0 <= t < 6:
-            return 200
+            return 220
         elif 6 <= t < 18:
-            return 200
+            return 220
         else:
-            return 300
+            return 580
     else:
         # Summer
         if 0 <= t < 6:
             return 200
         elif 6 <= t < 19:
-            return 220
+            return 200
         else:
-            return 580
+            return 300
 
+def battery_step(pv, load, current_capacity, max_capacity):
 
+    net = pv - load  # + = surplus, - = deficit
+
+    grid_import = 0
+    grid_export = 0
+
+    if net > 0:
+        # Charge battery
+        charge = net * DT
+
+        available_space = max_capacity - current_capacity
+        actual_charge = min(charge, available_space)
+
+        current_capacity += actual_charge
+        # leftover goes to grid
+        grid_export = (charge - actual_charge) / DT
+
+    else:
+        # Discharge battery
+        needed = -net * DT
+
+        actual_discharge = min(needed, current_capacity)
+
+        current_capacity -= actual_discharge
+
+        remaining_deficit = needed - actual_discharge
+        grid_import = remaining_deficit / DT
+
+    return current_capacity, grid_import, grid_export
+
+def simulate_day(panel_scale=1, battery_packs=6, OCI=10, is_summer=False):
+    #NEED TO ACCOUNT FOR CHANGES IN AZIMUTH ANGLES FOR DIFF PANEL NUMBERS
+    
+    capacity = battery_packs * pack_capacity
+
+    time = np.arange(0, 24, DT)
+
+    pv_array = []
+    load_array = []
+    current_capacity_array = []
+    grid_import_array = []
+    grid_export_array = []
+
+    current_capacity = 0.5 * capacity  # start half full
+
+    for t in time:
+        # pv = case_5_model(t, OCI, panel_scale) # PLACEHOLDER FOR CALLING CASE 5 MODEL!
+        pv = 1
+        load = load_model(t, is_summer)
+
+        current_capacity, g_in, g_out = battery_step(pv, load, current_capacity, capacity)
+
+        pv_array.append(pv)
+        load_array.append(load)
+        current_capacity_array.append(current_capacity)
+        grid_import_array.append(g_in)
+        grid_export_array.append(g_out)
+
+    return {
+        "time": time,
+        "pv": np.array(pv_array),
+        "load": np.array(load_array),
+        "current_capacity": np.array(current_capacity_array),
+        "grid_import": np.array(grid_import_array),
+        "grid_export": np.array(grid_export_array),
+    }
+# Economic Model - annual cost from 10 year cost
+def compute_cost(results, buy_price, sell_price, battery_packs):
+
+    energy_imported = np.sum(results["grid_import"]) * DT
+    energy_exported = np.sum(results["grid_export"]) * DT
+
+    electricity_cost = ((energy_imported * buy_price) - (energy_exported * sell_price))
+
+    capacity = battery_packs * pack_capacity
+    battery_cost = capacity * 115  # $/kWh
+
+    maintenance = 0.05 * battery_cost * 10  # 10 years
+
+    total_10yr_cost = electricity_cost * 365 * 10 + battery_cost + maintenance
+
+    annual_cost = total_10yr_cost / 10
+
+    return annual_cost
 
 if __name__ == '__main__':
     main()
