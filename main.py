@@ -37,7 +37,7 @@ def main():
     cleaned_2019_data = get_power_outputs_2019('PEC 15 minute data for 2019.csv', days_needed)
     annual_actual_energy = get_annual_daily_energy_array('PEC 15 minute data for 2019.csv')
     cleaned_feb_data = get_power_outputs_2026('pec 15 minute data for 2.5.2026.csv')
-
+    monthly_max, monthly_total = max_monthly_energy_2019(annual_actual_energy)
     total_system_energy = np.zeros(len(N))  # kWh
     if not day_name:
         t = np.zeros(len(N))
@@ -93,8 +93,9 @@ def main():
     # -----  Annual MWh Calculation -------
     energy_case1_annual = 0
     energy_case3_annual = 0
+    energy_cloudy_annual = 0
     daily_mwh_case3 = []
-
+    daily_mwh_cloudy = [] 
     for day in days_in_year:
         # Case 1 Daily Energy
         p1 = simulate(day,t_5min,beta,gamma)[0]
@@ -106,7 +107,12 @@ def main():
         e3 = np.trapezoid(p3 * 960, t_5min) / 1e6 # MWh for 960 panels
         energy_case3_annual += e3
         daily_mwh_case3.append(e3)
-    
+
+        # Cloudy Daily Energy
+        p_cloudy = simulate(day, t_5min, beta, gamma, annual_energy_array=annual_actual_energy, monthly_max=monthly_max)[0]        
+        e_cloudy = np.trapezoid(p_cloudy * 960, t_5min) / 1e6
+        energy_cloudy_annual += e_cloudy
+        daily_mwh_cloudy.append(e_cloudy)
     # Output Table of Annual Energy Production for Case 1 and Case 3 compared to 2019
 
     energy_actual_annual = np.sum(annual_actual_energy) / 1000 # MWh of 2019 actual energy
@@ -192,8 +198,17 @@ def main():
     # Plot total daily energy production vs day of the year
     plot_energy(days_in_year, daily_mwh_case3, annual_actual_energy/1000, title='Daily Energy Production vs. Day of the Year for Case 3')
 
+    # Plot cloudy daily power output over the year
+    plt.figure()
+    plt.plot(days_in_year, daily_mwh_cloudy, label='Cloudy')
+    plt.plot(days_in_year, [np.trapezoid(simulate(d, t_5min, beta, gamma)[0] * 960, t_5min) / 1e6 for d in days_in_year], label='Clear')
+    plt.xlabel('Day of Year')
+    plt.ylabel('Daily Energy (MWh)')
+    plt.title('Cloudy vs Clear Sky Power Output')
+    plt.legend()
+    plt.show()
 
-def simulate(N, t, beta, gamma, T_cell = 25):
+def simulate(N, t, beta, gamma, T_cell = 25, annual_energy_array=None, monthly_max=None):
 
     # constants
     L = 30.26 # deg Latitude of Austin
@@ -232,11 +247,19 @@ def simulate(N, t, beta, gamma, T_cell = 25):
             theta_i[i] = angle_of_incidence(alpha[i], beta, gamma, gamma_s[i])
 
             if theta_i[i] < math.pi/2:
-                tau_b[i] = beam_transmissivity(N, theta_z[i], altitude)
-                tau_d[i] = diffuse_transmittivity(tau_b[i])
-                I_cd[i] = diffuse_radiation(I_0, theta_z[i], tau_d[i], beta)
-                I_cb[i] = beam_radiation(I_0, tau_b[i], theta_i[i])
-                I[i] = I_cd[i] + I_cb[i]
+                if annual_energy_array is None and monthly_max is None:
+                    tau_b[i] = beam_transmissivity(N, theta_z[i], altitude)
+                    tau_d[i] = diffuse_transmittivity(tau_b[i])
+                    I_cd[i] = diffuse_radiation(I_0, theta_z[i], tau_d[i], beta)
+                    I_cb[i] = beam_radiation(I_0, tau_b[i], theta_i[i])
+                    I[i] = I_cd[i] + I_cb[i]
+                else:
+                    OCI = oci(monthly_max, int(N), annual_energy_array)
+                    tau_b[i] = beam_transmissivity_cloudy(N, theta_z[i], altitude, OCI)
+                    tau_d[i] = diffuse_transmittivity_cloudy(N, theta_z[i], altitude, OCI)
+                    I_cd[i] = diffuse_radiation_cloudy(I_0, theta_z[i], tau_d[i], beta)
+                    I_cb[i] = beam_radiation_cloudy(I_0, tau_b[i], theta_i[i])
+                    I[i] = I_cd[i] + I_cb[i]
 
                 P_25C = I[i] * panel_eff * A *inverter_eff # Power at 25C cell temperature
                 Wdot_elec[i] = P_25C * (1 + power_temp_coeff * (T_cell - 25)) # Adjusted for cell temperature
@@ -378,7 +401,6 @@ def plot_solar_data(t, power_array, real_power_array, irradiance_array, day_name
     fig.tight_layout()
 
     plt.show()
-
 
 def plot_bd_ratio(t, ratios, day_name):
     # Plots Beam-to-Diffuse ratio vs time of day
@@ -597,6 +619,88 @@ def get_annual_daily_energy_array(file_path):
             annual_energy_array[n - 1] = energy
 
     return annual_energy_array
+
+
+# Case 4: Effect of clouds on power output
+
+def max_monthly_energy_2019(annual_energy_array):
+    months_2019 = {
+        "Jan": range(1, 32),
+        "Feb": range(32, 60),
+        "Mar": range(60, 91),
+        "Apr": range(91, 121),
+        "May": range(121, 152),
+        "Jun": range(152, 182),
+        "Jul": range(182, 213),
+        "Aug": range(213, 244),
+        "Sep": range(244, 274),
+        "Oct": range(274, 305),
+        "Nov": range(305, 335),
+        "Dec": range(335, 366),
+    }
+
+    monthly_max = {}
+    monthly_total = {}
+
+    for month, day_range in months_2019.items():
+        # slice the array for that month (converting N to 0-indexed)
+        month_energies = annual_energy_array[day_range.start - 1 : day_range.stop - 1]
+
+        monthly_max[month] = np.max(month_energies)
+        monthly_total[month] = np.sum(month_energies)
+
+    return monthly_max, monthly_total
+
+# NOTE: needs improvement
+def oci(monthly_max, N, annual_energy_array): 
+    months_2019 = {
+        "Jan": range(1, 32),
+        "Feb": range(32, 60),
+        "Mar": range(60, 91),
+        "Apr": range(91, 121),
+        "May": range(121, 152),
+        "Jun": range(152, 182),
+        "Jul": range(182, 213),
+        "Aug": range(213, 244),
+        "Sep": range(244, 274),
+        "Oct": range(274, 305),
+        "Nov": range(305, 335),
+        "Dec": range(335, 366),
+    }
+
+    # find energy for day n
+    E = annual_energy_array[N - 1] 
+    # find which month n belongs to
+    month_of_n = next(month for month, day_range in months_2019.items() if N in day_range)
+    # calc OCI
+    max_E = monthly_max[month_of_n]
+    OCI = 10 - (E-0.05*max_E)/(max_E-0.05*max_E)
+
+    return OCI
+
+# defining cloudy variables with OCI
+def beam_transmissivity_cloudy(N, theta_z, A, OCI): 
+    tau_b = beam_transmissivity(N, theta_z, A)
+    tau_b_cloudy = tau_b * (1 - OCI / 10)
+    return tau_b_cloudy
+
+def diffuse_transmittivity_cloudy(N, theta_z, A, OCI): 
+    tau_b_cloudy = beam_transmissivity_cloudy(N, theta_z, A, OCI)
+    tau_d_cloudy = (1 - (0.75)*OCI/10) * (0.271 - 0.294 * tau_b_cloudy)
+    return tau_d_cloudy
+
+# NOTE: doublecheck
+def diffuse_radiation_cloudy(I_0, theta_z, tau_d_cloudy, beta):
+    # theta_z = math.radians(theta_z) # uncomment for testing hand calcs w degrees
+    beta = math.radians(beta)
+    return I_0 * math.cos(theta_z) * tau_d_cloudy * ((1 + math.cos(beta)) / 2)
+
+# NOTE: doublecheck
+def beam_radiation_cloudy(I_0, tau_b_cloudy, theta_i):
+    # theta_z = math.radians(theta_z) # uncomment for testing hand calcs w degrees
+    return I_0 * tau_b_cloudy * math.cos(theta_i)
+
+
 
 #------ Setting Up Code for Case 6 (Draft) -------#
 original_Panels = 960
