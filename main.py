@@ -33,12 +33,11 @@ def main():
 
     """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
     days_needed = np.unique(np.append(N, [172, 355])).tolist() # Adding june 21 and dec 21 for case 2 and 3 plots
-    cleaned_2019_data = get_cleaned_solar_power_arrays('PEC 15 minute data for 2019.csv', days_needed)
 
-    cleaned_2019_data = get_power_outputs_2019('PEC 15 minute data for 2019.csv', N)
+    cleaned_2019_data = get_power_outputs_2019('PEC 15 minute data for 2019.csv', days_needed)
     annual_actual_energy = get_annual_daily_energy_array('PEC 15 minute data for 2019.csv')
     cleaned_feb_data = get_power_outputs_2026('pec 15 minute data for 2.5.2026.csv')
-
+    monthly_max, monthly_total = max_monthly_energy_2019(annual_actual_energy)
     total_system_energy = np.zeros(len(N))  # kWh
     if not day_name:
         t = np.zeros(len(N))
@@ -94,8 +93,9 @@ def main():
     # -----  Annual MWh Calculation -------
     energy_case1_annual = 0
     energy_case3_annual = 0
+    energy_cloudy_annual = 0
     daily_mwh_case3 = []
-
+    daily_mwh_cloudy = [] 
     for day in days_in_year:
         # Case 1 Daily Energy
         p1 = simulate(day,t_5min,beta,gamma)[0]
@@ -107,7 +107,12 @@ def main():
         e3 = np.trapezoid(p3 * 960, t_5min) / 1e6 # MWh for 960 panels
         energy_case3_annual += e3
         daily_mwh_case3.append(e3)
-    
+
+        # Cloudy Daily Energy
+        p_cloudy = simulate(day, t_5min, beta, gamma, annual_energy_array=annual_actual_energy, monthly_max=monthly_max)[0]        
+        e_cloudy = np.trapezoid(p_cloudy * 960, t_5min) / 1e6
+        energy_cloudy_annual += e_cloudy
+        daily_mwh_cloudy.append(e_cloudy)
     # Output Table of Annual Energy Production for Case 1 and Case 3 compared to 2019
 
     energy_actual_annual = np.sum(annual_actual_energy) / 1000 # MWh of 2019 actual energy
@@ -193,8 +198,17 @@ def main():
     # Plot total daily energy production vs day of the year
     plot_energy(days_in_year, daily_mwh_case3, annual_actual_energy/1000, title='Daily Energy Production vs. Day of the Year for Case 3')
 
+    # Plot cloudy daily power output over the year
+    plt.figure()
+    plt.plot(days_in_year, daily_mwh_cloudy, label='Cloudy')
+    plt.plot(days_in_year, [np.trapezoid(simulate(d, t_5min, beta, gamma)[0] * 960, t_5min) / 1e6 for d in days_in_year], label='Clear')
+    plt.xlabel('Day of Year')
+    plt.ylabel('Daily Energy (MWh)')
+    plt.title('Cloudy vs Clear Sky Power Output')
+    plt.legend()
+    plt.show()
 
-def simulate(N, t, beta, gamma, T_cell = 25):
+def simulate(N, t, beta, gamma, T_cell = 25, annual_energy_array=None, monthly_max=None):
 
     # constants
     L = 30.26 # deg Latitude of Austin
@@ -233,11 +247,19 @@ def simulate(N, t, beta, gamma, T_cell = 25):
             theta_i[i] = angle_of_incidence(alpha[i], beta, gamma, gamma_s[i])
 
             if theta_i[i] < math.pi/2:
-                tau_b[i] = beam_transmissivity(N, theta_z[i], altitude)
-                tau_d[i] = diffuse_transmittivity(tau_b[i])
-                I_cd[i] = diffuse_radiation(I_0, theta_z[i], tau_d[i], beta)
-                I_cb[i] = beam_radiation(I_0, tau_b[i], theta_i[i])
-                I[i] = I_cd[i] + I_cb[i]
+                if annual_energy_array is None and monthly_max is None:
+                    tau_b[i] = beam_transmissivity(N, theta_z[i], altitude)
+                    tau_d[i] = diffuse_transmittivity(tau_b[i])
+                    I_cd[i] = diffuse_radiation(I_0, theta_z[i], tau_d[i], beta)
+                    I_cb[i] = beam_radiation(I_0, tau_b[i], theta_i[i])
+                    I[i] = I_cd[i] + I_cb[i]
+                else:
+                    OCI = oci(monthly_max, int(N), annual_energy_array)
+                    tau_b[i] = beam_transmissivity_cloudy(N, theta_z[i], altitude, OCI)
+                    tau_d[i] = diffuse_transmittivity_cloudy(N, theta_z[i], altitude, OCI)
+                    I_cd[i] = diffuse_radiation_cloudy(I_0, theta_z[i], tau_d[i], beta)
+                    I_cb[i] = beam_radiation_cloudy(I_0, tau_b[i], theta_i[i])
+                    I[i] = I_cd[i] + I_cb[i]
 
                 P_25C = I[i] * panel_eff * A *inverter_eff # Power at 25C cell temperature
                 Wdot_elec[i] = P_25C * (1 + power_temp_coeff * (T_cell - 25)) # Adjusted for cell temperature
@@ -380,7 +402,6 @@ def plot_solar_data(t, power_array, real_power_array, irradiance_array, day_name
 
     plt.show()
 
-
 def plot_bd_ratio(t, ratios, day_name):
     # Plots Beam-to-Diffuse ratio vs time of day
 
@@ -476,7 +497,7 @@ def optimized_beta (N, hour,gamma, L):
     def objective(beta):
         return angle_of_incidence(alpha, beta, gamma, gamma_s)
     
-    res = minimize_scalar(objective, bounds=(0, 90), method='bounded')
+    res = minimize_scalar(objective, bounds=(-90, 90), method='bounded')
 
     return res.x
 
@@ -598,6 +619,230 @@ def get_annual_daily_energy_array(file_path):
             annual_energy_array[n - 1] = energy
 
     return annual_energy_array
+
+
+# Case 4: Effect of clouds on power output
+
+def max_monthly_energy_2019(annual_energy_array):
+    months_2019 = {
+        "Jan": range(1, 32),
+        "Feb": range(32, 60),
+        "Mar": range(60, 91),
+        "Apr": range(91, 121),
+        "May": range(121, 152),
+        "Jun": range(152, 182),
+        "Jul": range(182, 213),
+        "Aug": range(213, 244),
+        "Sep": range(244, 274),
+        "Oct": range(274, 305),
+        "Nov": range(305, 335),
+        "Dec": range(335, 366),
+    }
+
+    monthly_max = {}
+    monthly_total = {}
+
+    for month, day_range in months_2019.items():
+        # slice the array for that month (converting N to 0-indexed)
+        month_energies = annual_energy_array[day_range.start - 1 : day_range.stop - 1]
+
+        monthly_max[month] = np.max(month_energies)
+        monthly_total[month] = np.sum(month_energies)
+
+    return monthly_max, monthly_total
+
+# NOTE: needs improvement
+def oci(monthly_max, N, annual_energy_array): 
+    months_2019 = {
+        "Jan": range(1, 32),
+        "Feb": range(32, 60),
+        "Mar": range(60, 91),
+        "Apr": range(91, 121),
+        "May": range(121, 152),
+        "Jun": range(152, 182),
+        "Jul": range(182, 213),
+        "Aug": range(213, 244),
+        "Sep": range(244, 274),
+        "Oct": range(274, 305),
+        "Nov": range(305, 335),
+        "Dec": range(335, 366),
+    }
+
+    # find energy for day n
+    E = annual_energy_array[N - 1] 
+    # find which month n belongs to
+    month_of_n = next(month for month, day_range in months_2019.items() if N in day_range)
+    # calc OCI
+    max_E = monthly_max[month_of_n]
+    OCI = 10 - (E-0.05*max_E)/(max_E-0.05*max_E)
+
+    return OCI
+
+# defining cloudy variables with OCI
+def beam_transmissivity_cloudy(N, theta_z, A, OCI): 
+    tau_b = beam_transmissivity(N, theta_z, A)
+    tau_b_cloudy = tau_b * (1 - OCI / 10)
+    return tau_b_cloudy
+
+def diffuse_transmittivity_cloudy(N, theta_z, A, OCI): 
+    tau_b_cloudy = beam_transmissivity_cloudy(N, theta_z, A, OCI)
+    tau_d_cloudy = (1 - (0.75)*OCI/10) * (0.271 - 0.294 * tau_b_cloudy)
+    return tau_d_cloudy
+
+# NOTE: doublecheck
+def diffuse_radiation_cloudy(I_0, theta_z, tau_d_cloudy, beta):
+    # theta_z = math.radians(theta_z) # uncomment for testing hand calcs w degrees
+    beta = math.radians(beta)
+    return I_0 * math.cos(theta_z) * tau_d_cloudy * ((1 + math.cos(beta)) / 2)
+
+# NOTE: doublecheck
+def beam_radiation_cloudy(I_0, tau_b_cloudy, theta_i):
+    # theta_z = math.radians(theta_z) # uncomment for testing hand calcs w degrees
+    return I_0 * tau_b_cloudy * math.cos(theta_i)
+
+
+
+#------ Setting Up Code for Case 6 (Draft) -------#
+original_Panels = 960
+pack_capacity = 210  # kWh per tesla power pack
+battery_efficiency = 1.0    # assume ideal unless told otherwise
+battery_cost = 115 #$/kWh 
+
+# Time
+DT = 5/60  # 5-minute timestep in hours
+
+# Adjust for Daylight Savings Time (if needed)
+def apply_dst(t, date):
+    year = date.year
+
+    # DST starts 2nd Sunday in March
+    march = datetime(year, 3, 1)
+    first_sunday_march = march + timedelta(days=(6 - march.weekday()) % 7)
+    second_sunday_march = first_sunday_march + timedelta(days=7)
+
+    #DST ends 1st Sunday in November
+    november = datetime(year, 11, 1)
+    first_sunday_november = november + timedelta(days=(6 - november.weekday()) % 7)
+
+    if second_sunday_march <= date < first_sunday_november:
+        return t - 1  # shift solar time back 1 hour
+    else:
+        return t
+    
+#  Idealized PEC power use for a typical summer and winter day 
+# summer days go from June 1 to Nov. 20 and the winter days are from Nov. 21 to May 31
+def load_model(t, date):
+    month = date.month
+    day = date.day
+
+    is_summer = (
+        (month > 6 and month < 11) or
+        (month == 6 and day >= 1) or
+        (month == 11 and day <= 20)
+    )
+
+    if is_summer:
+        # Winter
+        if 0 <= t < 6:
+            return 220
+        elif 6 <= t < 18:
+            return 220
+        else:
+            return 580
+    else:
+        # Summer
+        if 0 <= t < 6:
+            return 200
+        elif 6 <= t < 19:
+            return 200
+        else:
+            return 300
+
+def battery_step(pv, load, current_capacity, max_capacity):
+
+    net = pv - load  # + = surplus, - = deficit
+
+    grid_import = 0
+    grid_export = 0
+
+    if net > 0:
+        # Charge battery
+        charge = net * DT
+
+        available_space = max_capacity - current_capacity
+        actual_charge = min(charge, available_space)
+
+        current_capacity += actual_charge
+        # leftover goes to grid
+        grid_export = (charge - actual_charge) / DT
+
+    else:
+        # Discharge battery
+        needed = -net * DT
+
+        actual_discharge = min(needed, current_capacity)
+
+        current_capacity -= actual_discharge
+
+        remaining_deficit = needed - actual_discharge
+        grid_import = remaining_deficit / DT
+
+    return current_capacity, grid_import, grid_export
+
+def simulate_day(panel_scale=1, battery_packs=6, OCI=10, is_summer=False):
+    #NEED TO ACCOUNT FOR CHANGES IN AZIMUTH ANGLES FOR DIFF PANEL NUMBERS
+    
+    capacity = battery_packs * pack_capacity
+
+    time = np.arange(0, 24, DT)
+
+    pv_array = []
+    load_array = []
+    current_capacity_array = []
+    grid_import_array = []
+    grid_export_array = []
+
+    current_capacity = 0.5 * capacity  # start half full
+
+    for t in time:
+        # pv = case_5_model(t, OCI, panel_scale) # PLACEHOLDER FOR CALLING CASE 5 MODEL!
+        pv = 1
+        load = load_model(t, is_summer)
+
+        current_capacity, g_in, g_out = battery_step(pv, load, current_capacity, capacity)
+
+        pv_array.append(pv)
+        load_array.append(load)
+        current_capacity_array.append(current_capacity)
+        grid_import_array.append(g_in)
+        grid_export_array.append(g_out)
+
+    return {
+        "time": time,
+        "pv": np.array(pv_array),
+        "load": np.array(load_array),
+        "current_capacity": np.array(current_capacity_array),
+        "grid_import": np.array(grid_import_array),
+        "grid_export": np.array(grid_export_array),
+    }
+# Economic Model - annual cost from 10 year cost
+def compute_cost(results, buy_price, sell_price, battery_packs):
+
+    energy_imported = np.sum(results["grid_import"]) * DT
+    energy_exported = np.sum(results["grid_export"]) * DT
+
+    electricity_cost = ((energy_imported * buy_price) - (energy_exported * sell_price))
+
+    capacity = battery_packs * pack_capacity
+    battery_cost = capacity * 115  # $/kWh
+
+    maintenance = 0.05 * battery_cost * 10  # 10 years
+
+    total_10yr_cost = electricity_cost * 365 * 10 + battery_cost + maintenance
+
+    annual_cost = total_10yr_cost / 10
+
+    return annual_cost
 
 if __name__ == '__main__':
     main()
