@@ -4,6 +4,9 @@ import matplotlib.pyplot as plt
 import math
 from scipy.optimize import minimize_scalar
 from datetime import datetime, timedelta
+import csv
+from collections import defaultdict
+
 
 def main():
 
@@ -12,8 +15,8 @@ def main():
     # Relevant days and times
     # Feb 5, N = 36
     # Feb 24, N = 55
-    # Jun 21, N = 172
-    # Dec 21, N = 355
+    # Jun 21, N = 172 [49248:49536]
+    # Dec 21, N = 355 [101952:102240]
     t_15min = np.linspace(0, 24, 96)
     t_5min = np.linspace(0, 24, 288) # 24 hours*12 increments per hour = 288 increments
     days_in_year = np.arange(1,366)
@@ -32,6 +35,8 @@ def main():
     gamma = 46 # Panel azimuthal angle
 
     """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
+
+    # <editor-fold desc="Case 1">
     days_needed = np.unique(np.append(N, [172, 355])).tolist() # Adding june 21 and dec 21 for case 2 and 3 plots
 
     cleaned_2019_data = get_power_outputs_2019('PEC 15 minute data for 2019.csv', days_needed)
@@ -68,15 +73,6 @@ def main():
         total_system_energy[i] = np.trapezoid(p_day_array, t_5min)
         i += 1
 
-    # simulate function indexing guide
-    # simulate[0] = Power output for 1 panel in W/m^2
-    # simulate[1] = Irradiance in W/m^2
-    # simulate[2] = Ratio of beam irradiance to diffuse irradiance
-    # simulate[3] = Angle of incidence in rads
-    # simulate[4] = Total daily energy production for 1 panel in kWh
-
-    # IMPORTANT: * Plot shapes are SUPER related to beta and gamma
-
     # Plots vs time of day
     if day_name:
         plot_solar_data(t, total_system_power[0], cleaned_2019_data[N[0]], irradiance[0], day_name)
@@ -89,7 +85,9 @@ def main():
     if not day_name:
         plot_theta_i(N, theta_i_noon) # *
         plot_energy(N, total_system_energy/1000, annual_actual_energy/1000) # Converts kWh to MWh for plotting
-    
+    # </editor-fold>
+
+    # <editor-fold desc="Annual MWh Calculation">
     # -----  Annual MWh Calculation -------
     energy_case1_annual = 0
     energy_case3_annual = 0
@@ -123,7 +121,9 @@ def main():
     print(f"{'Case 3 (Tracking)':<25} | {energy_case3_annual:>15.4f}")
     print(f"{'2019 Actual Data':<25} | {energy_actual_annual:>15.4f}")
     print("="*45)
+    # </editor-fold>
 
+    # <editor-fold desc="Case 2">
     # ---- For Case 2: Effect of Panel Temperature ---- #
     
     # Plot irradiance and total system power - December 21 and June 21
@@ -175,7 +175,9 @@ def main():
     plt.legend()
     plt.grid(True)
     plt.show()
-    
+    # </editor-fold>
+
+    # <editor-fold desc="Case 3">
     # ---- For Case 3: Optimized Vertical Tracking Angle ----
     
     # Irradiance and total system power delivery - December 21
@@ -197,6 +199,10 @@ def main():
 
     # Plot total daily energy production vs day of the year
     plot_energy(days_in_year, daily_mwh_case3, annual_actual_energy/1000, title='Daily Energy Production vs. Day of the Year for Case 3')
+    # </editor-fold>
+
+    # <editor-fold desc="Case 4">
+    # ---- For Case 4: cloudy data ----
 
     # Plot cloudy daily power output over the year
     plt.figure()
@@ -207,8 +213,103 @@ def main():
     plt.title('Cloudy vs Clear Sky Power Output')
     plt.legend()
     plt.show()
+    # </editor-fold>
 
-def simulate(N, t, beta, gamma, T_cell = 25, annual_energy_array=None, monthly_max=None):
+    # <editor-fold desc="Case 5">
+    # ---- Case 5: Heat Transfer Model ---- #
+    temps_array, max_array, min_array = generate_yearly_5min_ambient_temps('austin_weather.csv')
+    jun21_clear_simulation = simulate(172, t_5min, 22, 46)
+    jun21_cloudy_simulation = simulate(172, t_5min, 22, 46, OCI_manual=10)
+    jun21_real_simulation = simulate(172, t_5min, 22, 46, annual_energy_array=annual_actual_energy, monthly_max=monthly_max)
+
+    # Those big indices are the 5 minute increments that represent Jun 21st if a whole year was split into 5 minute segments
+    jun21_clear_temps, jun21_clear_power, _ = simulate_case_5(jun21_clear_simulation[1], temps_array[49248:49536], temps_array[49248])
+    jun21_cloudy_temps, jun21_cloudy_power, _ = simulate_case_5(jun21_cloudy_simulation[1], temps_array[49248:49536], temps_array[49248])
+    jun21_real_temps, jun21_real_power, _ = simulate_case_5(jun21_real_simulation[1], temps_array[49248:49536], temps_array[49248])
+
+    # Initialize your tracking array and the starting panel temperature
+    case_5_daily_mwh = []
+
+    # Start the panel at the ambient temperature at midnight on Jan 1
+    T_cell_initial = temps_array[0]
+
+    # Loop through all 365 days of the year (Day 1 through Day 365)
+    for N in range(1, 366):
+        daily_oci = oci(monthly_max, N, annual_actual_energy)
+        I_array = simulate(N, t_5min, beta, gamma, OCI_manual=daily_oci)[1]
+        T_a_day = temps_array[(N - 1) * 288: N * 288]
+        T_cell_array, P_elec_array, T_cell_next = simulate_case_5(I_array, T_a_day, T_cell_initial)
+        daily_energy_mwh = sum(P_elec_array) * (5.0 / 60.0) / 1000000.0
+        case_5_daily_mwh.append(daily_energy_mwh)
+        T_cell_initial = T_cell_next
+
+    case_5_daily_mwh = np.array(case_5_daily_mwh)
+
+    # Jun 21 Panel Temp vs Time of Day sunny and cloudy plots
+    plt.plot(t_5min, jun21_clear_temps, label='Clear')
+    plt.plot(t_5min, jun21_cloudy_temps, label='Cloudy', linestyle='--')
+    plt.xlabel('Time of Day (hours)')
+    plt.xticks(np.arange(0, 25, 4))
+    plt.ylabel('Temperature (C)')
+    plt.title('Panel Temperature vs. Time of Day (June 21) - Case 5')
+    plt.grid(True, alpha=0.6)
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
+
+    # Jun 21 Ambient temp vs time of day
+    plt.plot(t_5min, temps_array[49248:49536])
+    plt.xlabel('Time of Day (hours)')
+    plt.xticks(np.arange(0, 25, 4))
+    plt.ylabel('Temperature (C)')
+    plt.title('Ambient Temperature vs. Time of Day (June 21)')
+    plt.grid(True, alpha=0.6)
+    plt.tight_layout()
+    plt.show()
+
+    # Jun 21 Irradiance and total system power delivery vs Time of Day sunny, cloudy, and cloud model plots
+    fig, ax1 = plt.subplots()
+
+    ax1.plot(t_5min, jun21_clear_power / 1e3, label='Clear Power Output', color='blue')
+    ax1.plot(t_5min, jun21_cloudy_power / 1e3, label='Cloudy Power Output', linestyle='--', color='orange')
+    ax1.plot(t_5min, jun21_real_power / 1e3, label='Cloud Model Power Output', linestyle='-.', color='cyan')
+    ax1.set_xlabel('Time of Day (hours)')
+    ax1.set_xticks(np.arange(0, 25, 4))
+    ax1.set_ylabel('Power Output (kW)')
+
+    ax2 = ax1.twinx()
+    ax2.plot(t_5min, jun21_clear_simulation[1] / 1e3, label='Clear Irradiance', linestyle=':', color='red')
+    ax2.plot(t_5min, jun21_cloudy_simulation[1] / 1e3, label='Cloudy Irradiance', linestyle=':', color='green')
+    ax2.plot(t_5min, jun21_real_simulation[1] / 1e3, label='Cloud Model Irradiance', linestyle=':', color='magenta')
+    ax2.set_ylabel('Irradiance (kW/m^2)')
+
+    handles1, labels1 = ax1.get_legend_handles_labels()
+    handles2, labels2 = ax2.get_legend_handles_labels()
+    ax1.legend(handles1 + handles2, labels1 + labels2)
+
+    plt.title('Irradiance and Total System Power vs. Time of Day (June 21) - Case 5')
+    plt.tight_layout()
+    plt.show()
+
+    # Total daily energy production (MWh) vs. Day of year starting from Jan 1
+    plt.plot(days_in_year, case_5_daily_mwh)
+    plt.xlabel('Day of the Year')
+    plt.xticks(np.arange(0, 366, 30))
+    plt.ylabel('Energy Production (MWh)')
+    plt.title('Total Daily Energy Production vs. Day of the Year - Case 5')
+    plt.tight_layout()
+    plt.show()
+
+    # </editor-fold>
+
+
+def simulate(N, t, beta, gamma, T_cell = 25, annual_energy_array=None, monthly_max=None, OCI_manual=None):
+    # simulate function indexing guide
+    # simulate[0] = Power output for 1 panel in W/m^2
+    # simulate[1] = Irradiance in W/m^2
+    # simulate[2] = Ratio of beam irradiance to diffuse irradiance
+    # simulate[3] = Angle of incidence in rads
+    # simulate[4] = Total daily energy production for 1 panel in kWh
 
     # constants
     L = 30.26 # deg Latitude of Austin
@@ -247,14 +348,17 @@ def simulate(N, t, beta, gamma, T_cell = 25, annual_energy_array=None, monthly_m
             theta_i[i] = angle_of_incidence(alpha[i], beta, gamma, gamma_s[i])
 
             if theta_i[i] < math.pi/2:
-                if annual_energy_array is None and monthly_max is None:
+                if annual_energy_array is None and monthly_max is None and OCI_manual is None:
                     tau_b[i] = beam_transmissivity(N, theta_z[i], altitude)
                     tau_d[i] = diffuse_transmittivity(tau_b[i])
                     I_cd[i] = diffuse_radiation(I_0, theta_z[i], tau_d[i], beta)
                     I_cb[i] = beam_radiation(I_0, tau_b[i], theta_i[i])
                     I[i] = I_cd[i] + I_cb[i]
                 else:
-                    OCI = oci(monthly_max, int(N), annual_energy_array)
+                    if OCI_manual is None:
+                        OCI = oci(monthly_max, int(N), annual_energy_array)
+                    else:
+                        OCI = OCI_manual
                     tau_b[i] = beam_transmissivity_cloudy(N, theta_z[i], altitude, OCI)
                     tau_d[i] = diffuse_transmittivity_cloudy(N, theta_z[i], altitude, OCI)
                     I_cd[i] = diffuse_radiation_cloudy(I_0, theta_z[i], tau_d[i], beta)
@@ -843,6 +947,186 @@ def compute_cost(results, buy_price, sell_price, battery_packs):
     annual_cost = total_10yr_cost / 10
 
     return annual_cost
+
+# Case 5 - Solar panel temps
+# ------Ambient Temperature Model---------
+def generate_yearly_5min_ambient_temps(csv_filepath='austin_weather.csv'):
+    """
+    Reads historical Austin weather data, calculates the average daily min/max,
+    and generates a full year of ambient temperatures in 5-minute increments
+    using a sinusoidal approximation.
+
+    Returns:
+    yearly_temps_c : list of 105,120 ambient temperatures (in Celsius)
+    """
+    # Dictionary to group all historical highs and lows by day of the year (MM-DD)
+    daily_temps = defaultdict(lambda: {'highs': [], 'lows': []})
+
+    # Parse the CSV and aggregate historical temps for each day
+    with open(csv_filepath, 'r') as file:
+        reader = csv.DictReader(file)
+        for row in reader:
+            date_str = row['Date']  # Format: YYYY-MM-DD
+            month_day = date_str[5:]  # Extract just the MM-DD
+
+            # Skip leap year extra day to ensure a standard 365-day year
+            if month_day == '02-29':
+                continue
+
+            try:
+                # Extract the Fahrenheit high and low from the CSV
+                high_f = float(row['TempHighF'])
+                low_f = float(row['TempLowF'])
+
+                daily_temps[month_day]['highs'].append(high_f)
+                daily_temps[month_day]['lows'].append(low_f)
+            except ValueError:
+                pass  # Skip any rows with missing or malformed data
+
+    # Calculate the historical average min and max for each day
+    avg_daily_celsius = {}
+    for md, temps in daily_temps.items():
+        avg_high_f = sum(temps['highs']) / len(temps['highs'])
+        avg_low_f = sum(temps['lows']) / len(temps['lows'])
+
+        # Convert Fahrenheit to Celsius for the Case 5 thermodynamics model
+        avg_high_c = (avg_high_f - 32) * 5.0 / 9.0
+        avg_low_c = (avg_low_f - 32) * 5.0 / 9.0
+
+        avg_daily_celsius[md] = {'t_max': avg_high_c, 't_min': avg_low_c}
+
+    # Sort the dictionary keys to guarantee chronological order (01-01 to 12-31)
+    sorted_days = sorted(avg_daily_celsius.keys())
+
+    # Generate the temperatures
+    yearly_temps_c = []
+    daily_maxes = []
+    daily_mins = []
+
+    for md in sorted_days:
+        t_max = avg_daily_celsius[md]['t_max']
+        t_min = avg_daily_celsius[md]['t_min']
+
+        # Save the daily extremes for plotting
+        daily_maxes.append(t_max)
+        daily_mins.append(t_min)
+
+        t_mean = (t_max + t_min) / 2.0
+        t_amp = (t_max - t_min) / 2.0
+
+        for step in range(288):
+            hour_of_day = step / 12.0
+            t_amb = t_mean + t_amp * math.cos(math.pi * (hour_of_day - 16.0) / 12.0)
+            yearly_temps_c.append(t_amb)
+
+    # Return all three arrays
+    return yearly_temps_c, daily_maxes, daily_mins
+
+
+def plot_yearly_ambient_temps_with_extremes(yearly_temps_c, daily_maxes, daily_mins):
+    """
+    Plots the 5-minute interval ambient temperatures alongside
+    the daily average maximum and minimum temperatures.
+    """
+    # X-axis for 5-minute intervals (105,120 points -> 365 days)
+    days_5min = np.arange(len(yearly_temps_c)) / 288.0
+
+    # X-axis for daily intervals (365 points)
+    days_daily = np.arange(len(daily_maxes))
+
+    plt.figure(figsize=(12, 6))
+
+    # Plot the continuous 5-minute temperature band
+    plt.plot(days_5min, yearly_temps_c, color='orange', linewidth=0.5,
+             alpha=0.7, label='5-Min Ambient Temp')
+
+    # Plot the daily maximums and minimums
+    plt.plot(days_daily, daily_maxes, color='red', linewidth=1.5, label='Daily Avg High')
+    plt.plot(days_daily, daily_mins, color='blue', linewidth=1.5, label='Daily Avg Low')
+
+    # Set up the x-axis ticks to align with the start of each month
+    month_start_days = [1, 32, 60 , 91, 121, 152, 182, 213, 244, 274, 305, 335]
+    month_labels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+    plt.xticks(month_start_days, month_labels)
+
+    plt.xlabel('Month of the Year', fontsize=12)
+    plt.ylabel('Ambient Temperature (°C)', fontsize=12)
+    plt.title('Modeled Ambient Temperature with Daily Extremes (Austin, TX)', fontsize=14)
+
+    plt.legend(loc='best')
+    plt.grid(True, linestyle='--', alpha=0.6)
+    plt.tight_layout()
+    plt.show()
+
+
+def simulate_case_5(I_array, T_a_array, T_cell_initial=25.0):
+    """
+    Calculates the transient panel temperature and temperature-dependent power output
+    for Case 5 using the irradiance array (I_array) and an array of ambient temperatures (T_a_array).
+
+    Parameters:
+    I_array        : List or array of solar irradiance values in W/m^2 (from your simulate function)
+    T_a_array      : List or array of ambient temperatures in C (from your sinusoidal model)
+    T_cell_initial : Starting temperature of the panel in C (default 25.0)
+
+    Returns:
+    T_cell_array   : Array of panel temperatures (C) at each 5-min step
+    P_elec_array   : Array of electrical power output (W) at each 5-min step
+    T_cell         : The final panel temperature to carry over to the next day
+    """
+
+    # Constants
+    A = 1.640 * 0.99  # Panel area in m^2 [1]
+    m = 20.0  # Panel weight in kg [1]
+    cp = 677.0  # Cell specific heat in J/kg-K [1]
+    tau = 0.96  # Cover glass transmissivity [1]
+    alpha = 0.94  # Panel absorptivity [1]
+    eta_ref = 0.157  # Rated module efficiency (15.7%) [1]
+    temp_coeff = 0.0045  # Power temp coefficient (-0.45%/C -> 0.0045) [1]
+
+    # --- NOCT Conditions to calculate U_L ---
+    NOCT = 45.0  # Nominal Operating Cell Temp in C [1]
+    I_NOCT = 800.0  # Standard irradiance for NOCT in W/m^2 [1, 2]
+    T_air_NOCT = 20.0  # Standard ambient air temp for NOCT in C [1, 2]
+
+    # Calculate Overall Heat Loss Coefficient (U_L)
+    U_L = (I_NOCT * tau * alpha) / (NOCT - T_air_NOCT)
+
+    dt = 300.0  # 5-minute time step in seconds
+
+    T_cell = T_cell_initial
+    T_cell_array = []
+    P_elec_array = []
+
+    # Loop through the 5-minute increments for the given day
+    for i in range(len(I_array)):
+        I = I_array[i]
+        T_a = T_a_array[i]
+
+        # Temperature-Dependent Efficiency
+        # Efficiency decreases by 0.45% for every degree above 25C
+        eta = eta_ref * (1 - temp_coeff * (T_cell - 25.0))
+
+        # Calculate Electrical Power (Watts)
+        P_elec = I * A * eta
+
+        # Calculate heat transfer rates (Watts)
+        Q_in = I * A * tau * alpha
+        Q_loss = U_L * A * (T_cell - T_a)
+
+        # Save the current step's data for plotting
+        T_cell_array.append(T_cell)
+        P_elec_array.append(P_elec)
+
+        # 1st Law of Thermodynamics (Explicit Euler Integration)
+        # Calculate the new temperature for the *next* time step
+        dT_dt = (Q_in - Q_loss - P_elec) / (m * cp)
+        T_cell = T_cell + (dT_dt * dt)
+
+    return np.array(T_cell_array), np.array(P_elec_array), T_cell
+
 
 if __name__ == '__main__':
     main()
