@@ -14,11 +14,11 @@ def main():
     """"""""""""""""""""""""""" Control Panel """""""""""""""""""""""""""""
     # For when you're testing stuff and everyone else's work is slowing you down
     show_case_1 = 1
-    show_case_2 = 1
-    show_case_3 = 1
-    show_case_4 = 1
-    show_case_5 = 1
-    show_case_6 = 1
+    show_case_2 = 0
+    show_case_3 = 0
+    show_case_4 = 0
+    show_case_5 = 0
+    show_case_6 = 0
 
     # Relevant days and times
     # Feb 5, N = 36
@@ -32,8 +32,8 @@ def main():
     ## Comment or Uncomment Depending on what we're plotting ##
 
     # For plots vs time of day on individual days
-    N = np.array([36]) # Edit for plots of certain days
-    day_name = 'Feb 5'
+    N = np.array([355]) # Edit for plots of certain days
+    day_name = 'Dec 21'
 
     # # For plots vs day of the year at individual times
     # N = np.linspace(0, 365, 365)  # Day number where Jan 1st is 1
@@ -100,8 +100,12 @@ def main():
         # Plots vs time of day
 
         if day_name:
-            plot_solar_data(t, total_system_power[0], cleaned_2019_data[N[0]], irradiance[0], day_name)
-            plot_bd_ratio(t, bd_ratio[0], day_name) # *
+            if day_name == 'Dec 21':
+                flat_panel_irradiance = simulate(day, t, beta=0, gamma=gamma)[1]
+                plot_solar_data(t, total_system_power[0], cleaned_2019_data[N[0]], flat_panel_irradiance, day_name)
+            else:
+                plot_solar_data(t, total_system_power[0], cleaned_2019_data[N[0]], irradiance[0], day_name)
+            plot_bd_ratio(t, bd_ratio[0], day_name)
 
         if day_name == 'Feb 5':
             plot_power_delivery(t, total_system_power[0], cleaned_feb_data, day_name)
@@ -439,6 +443,8 @@ def simulate(N, t, beta, gamma, T_cell = 25, annual_energy_array=None, monthly_m
                 P_25C = I[i] * panel_eff * A *inverter_eff # Power at 25C cell temperature
                 Wdot_elec[i] = P_25C * (1 + power_temp_coeff * (T_cell - 25)) # Adjusted for cell temperature
                 bd_ratio[i] = I_cb[i] / I_cd[i]
+                if bd_ratio[i] > 10: # Correct for huge spike
+                    bd_ratio[i] = bd_ratio[i - 1]
 
             else:
                 Wdot_elec[i] = 0
@@ -512,12 +518,10 @@ def angle_of_incidence(alpha, beta, gamma, gamma_s): # theta_i
 
 def beam_transmissivity(N, theta_z, A): # tau_b
     # theta_z = math.radians(theta_z) # Uncomment this when testing hand calcs with degrees.
-    if (N >= 355) or (N <= 79):  # Winter range
+    if (N >= 355) or (N <= 172):  # Winter range
         r0, r1, rk = 1.03, 1.01, 1.00
-    elif 172 <= N <= 265:  # Summer range
+    elif 172 <= N <= 355:  # Summer range
         r0, r1, rk = 0.97, 0.99, 1.02
-    else:  # Spring/Fall (Standard)
-        r0, r1, rk = 1.00, 1.00, 1.00
 
     a0_star = 0.4237 - 0.008216 * (6 - A) ** 2
     a1_star = 0.5055 + 0.00595 * (6.5 - A) ** 2
