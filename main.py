@@ -34,6 +34,19 @@ def main():
     beta = 22 # Panel angle for case 1 and 2
     gamma = 46 # Panel azimuthal angle
 
+    # Case 6 constants
+    original_Panels = 960
+    pack_capacity = 210  # kWh per tesla power pack
+    battery_efficiency = 1.0    # assume ideal unless told otherwise
+    battery_cost = 115 #$/kWh 
+
+    DT = 5/60  # 5-minute timestep in hours
+
+    battery_packs_list = [0, 6, 12]
+    buy_back_prices = [0.00, 0.04]
+    austin_energy_prices = np.linspace(0.06, 0.18, 7)
+    feb_5_idx = 36
+
     """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 
     # <editor-fold desc="Case 1">
@@ -301,6 +314,25 @@ def main():
     plt.show()
 
     # </editor-fold>
+
+    # <editor-fold desc="Case 5">
+    #-----Case 6: Battery Storage and Economic Analysis-----#
+
+    # Performance Plots (Feb 5)
+    # Clear Day (OCI=10) for 1x, 4x, 6x
+    for scale in [1, 4, 6]:
+        plot_case_6_performance(36, 10, scale, 6, cleaned_feb_data, cleaned_feb_data) # replace 2nd one with actual load data
+
+    # Cloudy Day (OCI=5) for 4x, 6x
+    for scale in [4, 6]:
+        plot_case_6_performance(36, 5, scale, 6, cleaned_feb_data, cleaned_feb_data)
+
+    #Economic Sensitivity Plots
+    plot_case_6_economics(4, annual_actual_energy, monthly_max)
+    plot_case_6_economics(6, annual_actual_energy, monthly_max)
+      # </editor-fold>
+
+
 
 
 def simulate(N, t, beta, gamma, T_cell = 25, annual_energy_array=None, monthly_max=None, OCI_manual=None):
@@ -805,149 +837,6 @@ def beam_radiation_cloudy(I_0, tau_b_cloudy, theta_i):
     return I_0 * tau_b_cloudy * math.cos(theta_i)
 
 
-
-#------ Setting Up Code for Case 6 (Draft) -------#
-original_Panels = 960
-pack_capacity = 210  # kWh per tesla power pack
-battery_efficiency = 1.0    # assume ideal unless told otherwise
-battery_cost = 115 #$/kWh 
-
-# Time
-DT = 5/60  # 5-minute timestep in hours
-
-# Adjust for Daylight Savings Time (if needed)
-def apply_dst(t, date):
-    year = date.year
-
-    # DST starts 2nd Sunday in March
-    march = datetime(year, 3, 1)
-    first_sunday_march = march + timedelta(days=(6 - march.weekday()) % 7)
-    second_sunday_march = first_sunday_march + timedelta(days=7)
-
-    #DST ends 1st Sunday in November
-    november = datetime(year, 11, 1)
-    first_sunday_november = november + timedelta(days=(6 - november.weekday()) % 7)
-
-    if second_sunday_march <= date < first_sunday_november:
-        return t - 1  # shift solar time back 1 hour
-    else:
-        return t
-    
-#  Idealized PEC power use for a typical summer and winter day 
-# summer days go from June 1 to Nov. 20 and the winter days are from Nov. 21 to May 31
-def load_model(t, date):
-    month = date.month
-    day = date.day
-
-    is_summer = (
-        (month > 6 and month < 11) or
-        (month == 6 and day >= 1) or
-        (month == 11 and day <= 20)
-    )
-
-    if is_summer:
-        # Winter
-        if 0 <= t < 6:
-            return 220
-        elif 6 <= t < 18:
-            return 220
-        else:
-            return 580
-    else:
-        # Summer
-        if 0 <= t < 6:
-            return 200
-        elif 6 <= t < 19:
-            return 200
-        else:
-            return 300
-
-def battery_step(pv, load, current_capacity, max_capacity):
-
-    net = pv - load  # + = surplus, - = deficit
-
-    grid_import = 0
-    grid_export = 0
-
-    if net > 0:
-        # Charge battery
-        charge = net * DT
-
-        available_space = max_capacity - current_capacity
-        actual_charge = min(charge, available_space)
-
-        current_capacity += actual_charge
-        # leftover goes to grid
-        grid_export = (charge - actual_charge) / DT
-
-    else:
-        # Discharge battery
-        needed = -net * DT
-
-        actual_discharge = min(needed, current_capacity)
-
-        current_capacity -= actual_discharge
-
-        remaining_deficit = needed - actual_discharge
-        grid_import = remaining_deficit / DT
-
-    return current_capacity, grid_import, grid_export
-
-def simulate_day(panel_scale=1, battery_packs=6, OCI=10, is_summer=False):
-    #NEED TO ACCOUNT FOR CHANGES IN AZIMUTH ANGLES FOR DIFF PANEL NUMBERS
-    
-    capacity = battery_packs * pack_capacity
-
-    time = np.arange(0, 24, DT)
-
-    pv_array = []
-    load_array = []
-    current_capacity_array = []
-    grid_import_array = []
-    grid_export_array = []
-
-    current_capacity = 0.5 * capacity  # start half full
-
-    for t in time:
-        # pv = case_5_model(t, OCI, panel_scale) # PLACEHOLDER FOR CALLING CASE 5 MODEL!
-        pv = 1
-        load = load_model(t, is_summer)
-
-        current_capacity, g_in, g_out = battery_step(pv, load, current_capacity, capacity)
-
-        pv_array.append(pv)
-        load_array.append(load)
-        current_capacity_array.append(current_capacity)
-        grid_import_array.append(g_in)
-        grid_export_array.append(g_out)
-
-    return {
-        "time": time,
-        "pv": np.array(pv_array),
-        "load": np.array(load_array),
-        "current_capacity": np.array(current_capacity_array),
-        "grid_import": np.array(grid_import_array),
-        "grid_export": np.array(grid_export_array),
-    }
-# Economic Model - annual cost from 10 year cost
-def compute_cost(results, buy_price, sell_price, battery_packs):
-
-    energy_imported = np.sum(results["grid_import"]) * DT
-    energy_exported = np.sum(results["grid_export"]) * DT
-
-    electricity_cost = ((energy_imported * buy_price) - (energy_exported * sell_price))
-
-    capacity = battery_packs * pack_capacity
-    battery_cost = capacity * 115  # $/kWh
-
-    maintenance = 0.05 * battery_cost * 10  # 10 years
-
-    total_10yr_cost = electricity_cost * 365 * 10 + battery_cost + maintenance
-
-    annual_cost = total_10yr_cost / 10
-
-    return annual_cost
-
 # Case 5 - Solar panel temps
 # ------Ambient Temperature Model---------
 def generate_yearly_5min_ambient_temps(csv_filepath='austin_weather.csv'):
@@ -1127,6 +1016,265 @@ def simulate_case_5(I_array, T_a_array, T_cell_initial=25.0):
 
     return np.array(T_cell_array), np.array(P_elec_array), T_cell
 
+# Case 6 - Battery Storage & Economic Analysis
+original_Panels = 960
+pack_capacity = 210  # kWh per tesla power pack
+battery_efficiency = 1.0    # assume ideal unless told otherwise
+battery_cost = 115 #$/kWh 
+
+# Time
+DT = 5/60  # 5-minute timestep in hours
+
+# Adjust for Daylight Savings Time (if needed)
+def apply_dst(t, date):
+    year = date.year
+
+    # DST starts 2nd Sunday in March
+    march = datetime(year, 3, 1)
+    first_sunday_march = march + timedelta(days=(6 - march.weekday()) % 7)
+    second_sunday_march = first_sunday_march + timedelta(days=7)
+
+    #DST ends 1st Sunday in November
+    november = datetime(year, 11, 1)
+    first_sunday_november = november + timedelta(days=(6 - november.weekday()) % 7)
+
+    if second_sunday_march <= date < first_sunday_november:
+        return t - 1  # shift solar time back 1 hour
+    else:
+        return t
+    
+#  Idealized PEC power use for a typical summer and winter day 
+# summer days go from June 1 to Nov. 20 and the winter days are from Nov. 21 to May 31
+def load_model(t, date):
+    month = date.month
+    day = date.day
+
+    is_summer = (
+        (month > 6 and month < 11) or
+        (month == 6 and day >= 1) or
+        (month == 11 and day <= 20)
+    )
+
+    if is_summer:
+        # Summer
+        if 0 <= t < 6:
+            return 220
+        elif 6 <= t < 19:
+            return 220
+        else:
+            return 580
+    else:
+        # Winter
+        if 0 <= t < 6:
+            return 200
+        elif 6 <= t < 18:
+            return 200
+        else:
+            return 300
+
+def battery_step(pv, load, current_capacity, max_capacity):
+
+    net = pv - load  # positive = surplus, negative = deficit
+
+    grid_import = 0
+    grid_export = 0
+
+    if net > 0:
+        # Charge battery
+        charge = net * DT
+
+        available_space = max_capacity - current_capacity
+        actual_charge = min(charge, available_space)
+
+        current_capacity += actual_charge
+        # leftover goes to grid
+        grid_export = (charge - actual_charge) / DT
+
+    else:
+        # Discharge battery
+        needed = -net * DT
+
+        actual_discharge = min(needed, current_capacity)
+
+        current_capacity -= actual_discharge
+
+        remaining_deficit = needed - actual_discharge
+        grid_import = remaining_deficit / DT
+
+    return current_capacity, grid_import, grid_export
+
+def get_scaled_pv_power(N, t_array, panel_scale, oci_val):
+    # Different panel azimuthal angles based on size
+    # 1x = original (960 panels at 46 deg)
+    # 4x = 1x (original at 46) + 2x (at 0 deg) + 1x (at 23 deg)
+    # 5x = 1x (original at 46) + 2x (at 0 deg) + 2x (at 23 deg)
+    # 6x = 1x (original at 46) + 2x (at 0 deg) + 2x (at 23 deg) + 1x (at 46 deg)
+    
+    # Configuration Map: {azimuth: multiplier_of_960}
+    if panel_scale == 1:
+        config = {46: 1}
+    elif panel_scale == 4:
+        config = {46: 1, 0: 2, 23: 1}
+    elif panel_scale == 5:
+        config = {46: 1, 0: 2, 23: 2}
+    elif panel_scale == 6:
+        config = {46: 2, 0: 2, 23: 2}
+    else:
+        config = {46: 1} 
+    
+    total_kw_array = np.zeros(len(t_array))
+    all_amb_temps, _, _ = generate_yearly_5min_ambient_temps('austin_weather.csv')
+    T_a_day = np.array(all_amb_temps[(N-1)*288 : N*288])
+
+    for gamma_val, multiplier in config.items():
+        # Get irradiance (res[1]) from simulate function
+        res = simulate(N, t_array, beta=22, gamma=gamma_val, OCI_manual=oci_val)
+        irr_array = res[1] 
+        
+        # Calculate electrical power (W) for one panel based on case 5 irradiance and  dynamic temperature
+        _, p_single_panel_watts, _ = simulate_case_5(irr_array, T_a_day, T_cell_initial=T_a_day[0])
+        
+        # 3. Summation: (Watts * number_of_panels) / 1000 = kW
+        # For scale 4x, this should be (p_single * 960 * 4) total
+        num_panels_in_block = 960 * multiplier
+        total_kw_array += (p_single_panel_watts * num_panels_in_block) / 1000.0
+
+    return total_kw_array
+
+def run_case_6_simulation(N, oci_val, panel_scale, battery_packs, pv_precalc=None):
+    t_5min = np.linspace(0, 24, 288)
+    capacity_kwh = battery_packs * 210 # pack_capacity
+    
+    if pv_precalc is not None:
+        pv_total_kw = pv_precalc  # Use the fast pre-calculated data instead of running thousands of times
+    else:
+        pv_total_kw = get_scaled_pv_power(N, t_5min, panel_scale, oci_val)
+    # ---------------------
+
+    soc_history, grid_buy, grid_sell, load_history = [], [], [], []
+    current_soc = 0.5 * capacity_kwh
+    current_date = datetime(2026, 1, 1) + timedelta(days=int(N-1))
+
+    for i, t_local in enumerate(t_5min):
+        t_corrected = apply_dst(t_local, current_date)
+        load_kw = load_model(t_corrected, current_date)
+        
+        new_soc, g_in, g_out = battery_step(pv_total_kw[i], load_kw, current_soc, capacity_kwh)
+        
+        soc_history.append(current_soc)
+        grid_buy.append(g_in)
+        grid_sell.append(g_out)
+        load_history.append(load_kw)
+        current_soc = new_soc
+
+    return {
+        "time": t_5min, "pv_kw": pv_total_kw, "load_kw": np.array(load_history),
+        "soc_kwh": np.array(soc_history), "grid_buy_kw": np.array(grid_buy),
+        "grid_sell_kw": np.array(grid_sell)
+    }
+# Economic Model - annual cost from 10 year cost
+def compute_annual_total_cost(results, buy_price, sell_price, battery_packs):
+    # Sum the 5-min steps and convert to kWh
+    energy_imported_kwh = np.sum(results["grid_buy_kw"]) * (5/60)
+    energy_exported_kwh = np.sum(results["grid_sell_kw"]) * (5/60)
+
+    # Net electricity cost for one day
+    daily_elec_cost = (energy_imported_kwh * buy_price) - (energy_exported_kwh * sell_price)
+
+    # Battery
+    capacity = battery_packs * pack_capacity
+    battery_investment = capacity * 115 
+    
+    # Maintenance over 10 years (5% of battery cost annually)
+    maint_10yr = 0.05 * battery_investment * 10
+
+    total_10yr = (daily_elec_cost * 365 * 10) + battery_investment + maint_10yr
+    return total_10yr / 10
+
+#Plotting functions for Case 6
+def plot_case_6_performance(N, oci_val, panel_scale, battery_packs, actual_pv_kw, actual_load_kw):
+    """
+    Plots PV, Load, Grid Purchase, and Battery SOC for a specific day.
+    Includes scatter points for actual eGauge data.
+    """
+    # 1. Run Simulation
+    res = run_case_6_simulation(N, oci_val, panel_scale, battery_packs)
+    
+    fig, ax1 = plt.subplots(figsize=(12, 6))
+    ax2 = ax1.twinx()  # Second axis for Battery Energy
+    
+    # --- Left Axis: Power (kW) ---
+    ax1.plot(res["time"], res["pv_kw"], 'g-', linewidth=2, label='Model PV Power (kW)')
+    ax1.plot(res["time"], res["load_kw"], 'r--', linewidth=2, label='Model Load (kW)')
+    ax1.plot(res["time"], res["grid_buy_kw"], 'b:', linewidth=1.5, label='Grid Purchase (kW)')
+    
+    # Scatter actual data
+    t_actual = np.linspace(0, 24, len(actual_pv_kw))
+    ax1.scatter(t_actual, actual_pv_kw, color='darkgreen', s=15, alpha=0.6, label='Actual PV (eGauge)')
+    ax1.scatter(t_actual, actual_load_kw, color='darkred', s=15, alpha=0.6, label='Actual Load (eGauge)')
+    
+    # --- Right Axis: Battery Energy (kWh) ---
+    ax2.fill_between(res["time"], 0, res["soc_kwh"], color='orange', alpha=0.15, label='Battery Energy (kWh)')
+    ax2.set_ylabel('Battery Energy (kWh)', color='orange', fontsize=12, fontweight='bold')
+    ax2.tick_params(axis='y', labelcolor='orange')
+    ax2.set_ylim(0, battery_packs * pack_capacity * 1.1)
+
+    # Formatting
+    ax1.set_xlabel('Time of Day (Hours)', fontsize=12)
+    ax1.set_ylabel('Power (kW)', fontsize=12, fontweight='bold')
+    title_str = f"Case 6: {panel_scale}x Panels, OCI={oci_val}, {battery_packs} Packs (Feb 5)"
+    plt.title(title_str, fontsize=14)
+    
+    # Combine legends from both axes
+    lines1, labels1 = ax1.get_legend_handles_labels()
+    lines2, labels2 = ax2.get_legend_handles_labels()
+    ax1.legend(lines1 + lines2, labels1 + labels2, loc='upper left', fontsize='small', ncol=2)
+    
+    ax1.grid(True, linestyle='--', alpha=0.5)
+    plt.tight_layout()
+    plt.show()
+
+def plot_case_6_economics(panel_scale, annual_actual_energy, monthly_max):
+    buy_prices = np.linspace(0.06, 0.18, 7)
+    pack_options = [0, 6, 12]
+    sell_back_options = [0.00, 0.04] 
+    t_5min = np.linspace(0, 24, 288)
+    
+    # 1. Pre-calculate the entire year of PV (Takes ~10-15 seconds)
+    print(f"Pre-calculating solar for {panel_scale}x expansion...")
+    yearly_pv = []
+    for N in range(1, 366):
+        daily_oci = oci(monthly_max, N, annual_actual_energy)
+        yearly_pv.append(get_scaled_pv_power(N, t_5min, panel_scale, daily_oci))
+    
+    for packs in pack_options:
+        print(f"Simulating {packs} packs...")
+        for sell_p in sell_back_options:
+            annual_costs = []
+            for buy_p in buy_prices:
+                total_annual_spend = 0
+                for N in range(1, 366):
+                    # Pass the pre-calculated PV to skip the physics
+                    res = run_case_6_simulation(N, None, panel_scale, packs, pv_precalc=yearly_pv[N-1])
+                    
+                    import_kwh = np.sum(res["grid_buy_kw"]) * (5/60)
+                    export_kwh = np.sum(res["grid_sell_kw"]) * (5/60)
+                    total_annual_spend += (import_kwh * buy_p) - (export_kwh * sell_p)
+                
+                # 10-year annualized math
+                cap_kwh = packs * 210
+                inv = cap_kwh * 115
+                annual_costs.append(((total_annual_spend * 10) + inv + (0.05 * inv * 10)) / 10)
+            
+            plt.plot(buy_prices, annual_costs, marker='o', label=f"{packs} Packs, ${sell_p} Sell")
+    
+    plt.xlabel('Austin Energy Purchase Price ($/kWh)')
+    plt.ylabel('Average Total Yearly Cost ($)')
+    plt.title(f'Economic Sensitivity Analysis: {panel_scale}x Panel Expansion')
+    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.show()
 
 if __name__ == '__main__':
     main()
