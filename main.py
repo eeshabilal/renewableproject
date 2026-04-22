@@ -216,11 +216,11 @@ def main():
 
     # <editor-fold desc="Case 4">
     # ---- For Case 4: cloudy data ----
-
     # Plot cloudy daily power output over the year
     plt.figure()
     plt.plot(days_in_year, daily_mwh_cloudy, label='Cloudy')
     plt.plot(days_in_year, [np.trapezoid(simulate(d, t_5min, beta, gamma)[0] * 960, t_5min) / 1e6 for d in days_in_year], label='Clear')
+    plt.plot(days_in_year, annual_actual_energy / 1000, label='2019 Actual')  
     plt.xlabel('Day of Year')
     plt.ylabel('Daily Energy (MWh)')
     plt.title('Cloudy vs Clear Sky Power Output')
