@@ -10,7 +10,15 @@ from collections import defaultdict
 
 def main():
 
+    # <editor-fold desc="Control Panel">
     """"""""""""""""""""""""""" Control Panel """""""""""""""""""""""""""""
+    # For when you're testing stuff and everyone else's work is slowing you down
+    show_case_1 = 1
+    show_case_2 = 1
+    show_case_3 = 1
+    show_case_4 = 1
+    show_case_5 = 1
+    show_case_6 = 1
 
     # Relevant days and times
     # Feb 5, N = 36
@@ -48,6 +56,7 @@ def main():
     feb_5_idx = 36
 
     """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
+    # </editor-fold>
 
     # <editor-fold desc="Case 1">
     days_needed = np.unique(np.append(N, [172, 355])).tolist() # Adding june 21 and dec 21 for case 2 and 3 plots
@@ -57,47 +66,50 @@ def main():
     cleaned_feb_data = get_power_outputs_2026('pec 15 minute data for 2.5.2026.csv')
     monthly_max, monthly_total = max_monthly_energy_2019(annual_actual_energy)
     total_system_energy = np.zeros(len(N))  # kWh
-    if not day_name:
-        t = np.zeros(len(N))
-        for i, day in enumerate(N):
-            t[i] = local_time(day, 12)
-        theta_i_noon = np.zeros(len(N)) # deg
-    else:
-        t = t_5min
-        total_system_power = np.zeros((np.size(N), np.size(t))) # W
-        irradiance = np.zeros((np.size(N), np.size(t))) # W/m^2
-        bd_ratio = np.zeros((np.size(N), np.size(t)))
 
-    i = 0
-    for day in N:
-        if day_name:
-            # Plots against time of day
-            res = simulate(day, t, beta, gamma)
-            total_system_power[i] = res[0]
-            irradiance[i] = res[1]
-            bd_ratio[i] = res[2]
+    if show_case_1:
+        if not day_name:
+            t = np.zeros(len(N))
+            for i, day in enumerate(N):
+                t[i] = local_time(day, 12)
+            theta_i_noon = np.zeros(len(N)) # deg
         else:
-            # Plots against day of year
-            res_noon = simulate(day, np.array([t[i]]), beta, gamma)
+            t = t_5min
+            total_system_power = np.zeros((np.size(N), np.size(t))) # W
+            irradiance = np.zeros((np.size(N), np.size(t))) # W/m^2
+            bd_ratio = np.zeros((np.size(N), np.size(t)))
 
-            theta_i_noon[i] = res_noon[3][0]
+        i = 0
+        for day in N:
+            if day_name:
+                # Plots against time of day
+                res = simulate(day, t, beta, gamma)
+                total_system_power[i] = res[0]
+                irradiance[i] = res[1]
+                bd_ratio[i] = res[2]
+            else:
+                # Plots against day of year
+                res_noon = simulate(day, np.array([t[i]]), beta, gamma)
 
-        p_day_array = simulate(day, t_5min, beta, gamma)[0]
-        total_system_energy[i] = np.trapezoid(p_day_array, t_5min)
-        i += 1
+                theta_i_noon[i] = res_noon[3][0]
 
-    # Plots vs time of day
-    if day_name:
-        plot_solar_data(t, total_system_power[0], cleaned_2019_data[N[0]], irradiance[0], day_name)
-        plot_bd_ratio(t, bd_ratio[0], day_name) # *
+            p_day_array = simulate(day, t_5min, beta, gamma)[0]
+            total_system_energy[i] = np.trapezoid(p_day_array, t_5min)
+            i += 1
 
-    if day_name == 'Feb 5':
-        plot_power_delivery(t, total_system_power[0], cleaned_feb_data, day_name)
+        # Plots vs time of day
 
-    # Plots vs day of the year
-    if not day_name:
-        plot_theta_i(N, theta_i_noon) # *
-        plot_energy(N, total_system_energy/1000, annual_actual_energy/1000) # Converts kWh to MWh for plotting
+        if day_name:
+            plot_solar_data(t, total_system_power[0], cleaned_2019_data[N[0]], irradiance[0], day_name)
+            plot_bd_ratio(t, bd_ratio[0], day_name) # *
+
+        if day_name == 'Feb 5':
+            plot_power_delivery(t, total_system_power[0], cleaned_feb_data, day_name)
+
+        # Plots vs day of the year
+        if not day_name:
+            plot_theta_i(N, theta_i_noon) # *
+            plot_energy(N, total_system_energy/1000, annual_actual_energy/1000) # Converts kWh to MWh for plotting
     # </editor-fold>
 
     # <editor-fold desc="Annual MWh Calculation">
@@ -140,196 +152,223 @@ def main():
     # ---- For Case 2: Effect of Panel Temperature ---- #
     
     # Plot irradiance and total system power - December 21 and June 21
-    temp_sets = {
-        "Dec 21 - Case 2":{"day": 355, "temps": [0,25,45]},
-        "Jun 21 - Case 2":{"day": 172, "temps": [25,45,85]}
-    }
+    if show_case_2:
+        temp_sets = {
+            "Dec 21 - Case 2":{"day": 355, "temps": [0,25,45]},
+            "Jun 21 - Case 2":{"day": 172, "temps": [25,45,85]}
+        }
 
-    for label, data in temp_sets.items():
-        fig, axis1 = plt.subplots(figsize=(10, 6))
-        axis2 = axis1.twinx()
+        for label, data in temp_sets.items():
+            fig, axis1 = plt.subplots(figsize=(10, 6))
+            axis2 = axis1.twinx()
 
-        day = data["day"]
-        irr_plot = None # To ensure irradiance is only plotted once per day since it doesn't change with temperature
+            day = data["day"]
+            irr_plot = None # To ensure irradiance is only plotted once per day since it doesn't change with temperature
 
-        for temp in data["temps"]:
-            power_temp, irr_temp, _, _ = simulate(day, t_5min, beta, gamma, T_cell=temp)
-            axis1.plot(t_5min, power_temp * 960 / 1000, label=f'Power at {temp}°C')
+            for temp in data["temps"]:
+                power_temp, irr_temp, _, _ = simulate(day, t_5min, beta, gamma, T_cell=temp)
+                axis1.plot(t_5min, power_temp * 960 / 1000, label=f'Power at {temp}°C')
 
-            if irr_plot is None:
-                irr_plot = irr_temp
-        axis1.plot(t_15min, cleaned_2019_data[day], linestyle=':', label='2019 Power')
-        axis2.plot(t_5min, irr_plot / 1000, color='orange', linestyle='--', label='Irradiance')
-        axis1.set_xlabel('Time of Day (hours)', fontweight='bold')
-        axis1.set_ylabel('Total System Power Delivery (kW)', color='blue', fontweight='bold')
-        axis2.set_ylabel('Irradiance (kW/m^2)', color='orange', fontweight='bold')
-        plt.title(f"Irradiance and System Power: {label}", fontweight='bold')
-        axis1.grid(True, alpha=0.6)
+                if irr_plot is None:
+                    irr_plot = irr_temp
+            axis1.plot(t_15min, cleaned_2019_data[day], linestyle=':', label='2019 Power')
+            axis2.plot(t_5min, irr_plot / 1000, color='orange', linestyle='--', label='Irradiance')
+            axis1.set_xlabel('Time of Day (hours)', fontweight='bold')
+            axis1.set_ylabel('Total System Power Delivery (kW)', color='blue', fontweight='bold')
+            axis2.set_ylabel('Irradiance (kW/m^2)', color='orange', fontweight='bold')
+            plt.title(f"Irradiance and System Power: {label}", fontweight='bold')
+            axis1.grid(True, alpha=0.6)
 
-        lines1, labels1 = axis1.get_legend_handles_labels()
-        lines2, labels2 = axis2.get_legend_handles_labels()
-        axis1.legend(lines1 + lines2, labels1 + labels2, loc='upper left')
+            lines1, labels1 = axis1.get_legend_handles_labels()
+            lines2, labels2 = axis2.get_legend_handles_labels()
+            axis1.legend(lines1 + lines2, labels1 + labels2, loc='upper left')
+            plt.show()
+
+        # Plot total daily energy production vs day of the year
+        plt.figure(figsize=(10, 6))
+        temps = [0, 25, 45, 85]
+        for temp in temps:
+            daily_mwh_case2 = []
+            for day in days_in_year:
+                power_temp, _, _, _ = simulate(day, t_5min, beta, gamma, T_cell=temp)
+                e2 = np.trapezoid(power_temp * 960, t_5min) / 1e6 # MWh for 960 panels
+                daily_mwh_case2.append(e2)
+            plt.plot(days_in_year, daily_mwh_case2, label=f'Temp = {temp}°C')
+        plt.plot(days_in_year, annual_actual_energy/1000, label='2019 Energy')
+        plt.xlabel('Day of the Year', fontweight='bold')
+        plt.ylabel('Daily Energy Production (MWh)', fontweight='bold')
+        plt.title('Daily Energy Production vs. Day of the Year for Case 2', fontweight='bold')
+        plt.legend()
+        plt.grid(True)
         plt.show()
-    
-    # Plot total daily energy production vs day of the year
-    plt.figure(figsize=(10, 6))
-    temps = [0, 25, 45, 85]
-    for temp in temps:
-        daily_mwh_case2 = []
-        for day in days_in_year:
-            power_temp, _, _, _ = simulate(day, t_5min, beta, gamma, T_cell=temp)
-            e2 = np.trapezoid(power_temp * 960, t_5min) / 1e6 # MWh for 960 panels
-            daily_mwh_case2.append(e2)
-        plt.plot(days_in_year, daily_mwh_case2, label=f'Temp = {temp}°C')
-    plt.plot(days_in_year, annual_actual_energy/1000, label='2019 Energy')
-    plt.xlabel('Day of the Year', fontweight='bold')
-    plt.ylabel('Daily Energy Production (MWh)', fontweight='bold')
-    plt.title('Daily Energy Production vs. Day of the Year for Case 2', fontweight='bold')
-    plt.legend()
-    plt.grid(True)
-    plt.show()
     # </editor-fold>
 
     # <editor-fold desc="Case 3">
     # ---- For Case 3: Optimized Vertical Tracking Angle ----
-    
-    # Irradiance and total system power delivery - December 21
-    power_dec, irr_dec, beta_dec = simulate_case_3(355, t_5min, gamma)
-    plot_solar_data(t_5min, power_dec, cleaned_2019_data[355], irr_dec, 'December 21 - Case 3 Optimized Vertical Tracking')
 
-    # Irradiance and total system power delivery - June 21
-    power_jun, irr_jun, beta_jun = simulate_case_3(172, t_5min, gamma)
-    plot_solar_data(t_5min, power_jun, cleaned_2019_data[172], irr_jun, 'June 21 - Case 3 Optimized Vertical Tracking')
+    if show_case_3:
+        # Irradiance and total system power delivery - December 21
+        power_dec, irr_dec, beta_dec = simulate_case_3(355, t_5min, gamma)
+        plot_solar_data(t_5min, power_dec, cleaned_2019_data[355], irr_dec, 'December 21 - Case 3 Optimized Vertical Tracking')
 
-    # Plot Tilt Angle vs time of day - June 21
-    plt.figure(figsize=(10, 6))
-    plt.plot(t_5min, beta_jun, color='purple', linewidth=2, label='Optimized Beta Angle')
-    plt.title('Case 3 Optimized Panel Angle vs Time of Day (June 21)')
-    plt.ylabel("Tilt Angle (degrees)")
-    plt.xlabel("Time (hours)")
-    plt.grid(True, alpha=0.6)
-    plt.show()
+        # Irradiance and total system power delivery - June 21
+        power_jun, irr_jun, beta_jun = simulate_case_3(172, t_5min, gamma)
+        plot_solar_data(t_5min, power_jun, cleaned_2019_data[172], irr_jun, 'June 21 - Case 3 Optimized Vertical Tracking')
 
-    # Plot total daily energy production vs day of the year
-    plot_energy(days_in_year, daily_mwh_case3, annual_actual_energy/1000, title='Daily Energy Production vs. Day of the Year for Case 3')
+        # Plot Tilt Angle vs time of day - June 21
+        plt.figure(figsize=(10, 6))
+        plt.plot(t_5min, beta_jun, color='purple', linewidth=2, label='Optimized Beta Angle')
+        plt.title('Case 3 Optimized Panel Angle vs Time of Day (June 21)')
+        plt.ylabel("Tilt Angle (degrees)")
+        plt.xlabel("Time (hours)")
+        plt.grid(True, alpha=0.6)
+        plt.show()
+
+        # Plot total daily energy production vs day of the year
+        plot_energy(days_in_year, daily_mwh_case3, annual_actual_energy/1000, title='Daily Energy Production vs. Day of the Year for Case 3')
     # </editor-fold>
 
     # <editor-fold desc="Case 4">
     # ---- For Case 4: cloudy data ----
-
-    # Plot cloudy daily power output over the year
-    plt.figure()
-    plt.plot(days_in_year, daily_mwh_cloudy, label='Cloudy')
-    plt.plot(days_in_year, [np.trapezoid(simulate(d, t_5min, beta, gamma)[0] * 960, t_5min) / 1e6 for d in days_in_year], label='Clear')
-    plt.xlabel('Day of Year')
-    plt.ylabel('Daily Energy (MWh)')
-    plt.title('Cloudy vs Clear Sky Power Output')
-    plt.legend()
-    plt.show()
+    if show_case_4:
+        # Plot cloudy daily power output over the year
+        plt.figure()
+        plt.plot(days_in_year, daily_mwh_cloudy, label='Cloudy')
+        plt.plot(days_in_year, [np.trapezoid(simulate(d, t_5min, beta, gamma)[0] * 960, t_5min) / 1e6 for d in days_in_year], label='Clear')
+        plt.xlabel('Day of Year')
+        plt.ylabel('Daily Energy (MWh)')
+        plt.title('Cloudy vs Clear Sky Power Output')
+        plt.legend()
+        plt.show()
     # </editor-fold>
 
     # <editor-fold desc="Case 5">
     # ---- Case 5: Heat Transfer Model ---- #
-    temps_array, max_array, min_array = generate_yearly_5min_ambient_temps('austin_weather.csv')
-    jun21_clear_simulation = simulate(172, t_5min, 22, 46)
-    jun21_cloudy_simulation = simulate(172, t_5min, 22, 46, OCI_manual=10)
-    jun21_real_simulation = simulate(172, t_5min, 22, 46, annual_energy_array=annual_actual_energy, monthly_max=monthly_max)
+    if show_case_5:
+        temps_array, max_array, min_array = generate_yearly_5min_ambient_temps('austin_weather.csv')
+        jun21_clear_simulation = simulate(172, t_5min, 22, 46)
+        jun21_cloudy_simulation = simulate(172, t_5min, 22, 46, OCI_manual=10)
+        jun21_real_simulation = simulate(172, t_5min, 22, 46, annual_energy_array=annual_actual_energy, monthly_max=monthly_max)
+        dec21_cloudy_simulation = simulate(355, t_5min, 22, 46, OCI_manual=10)
 
-    # Those big indices are the 5 minute increments that represent Jun 21st if a whole year was split into 5 minute segments
-    jun21_clear_temps, jun21_clear_power, _ = simulate_case_5(jun21_clear_simulation[1], temps_array[49248:49536], temps_array[49248])
-    jun21_cloudy_temps, jun21_cloudy_power, _ = simulate_case_5(jun21_cloudy_simulation[1], temps_array[49248:49536], temps_array[49248])
-    jun21_real_temps, jun21_real_power, _ = simulate_case_5(jun21_real_simulation[1], temps_array[49248:49536], temps_array[49248])
+        # Those big indices are the 5 minute increments that represent Jun 21st if a whole year was split into 5 minute segments
+        jun21_clear_temps, jun21_clear_power, _ = simulate_case_5(jun21_clear_simulation[1], temps_array[49248:49536], temps_array[49248])
+        jun21_cloudy_temps, jun21_cloudy_power, _ = simulate_case_5(jun21_cloudy_simulation[1], temps_array[49248:49536], temps_array[49248])
+        jun21_real_temps, jun21_real_power, _ = simulate_case_5(jun21_real_simulation[1], temps_array[49248:49536], temps_array[49248])
+        dec21_cloudy_temps, dec21_cloudy_power, _ = simulate_case_5(dec21_cloudy_simulation[1], temps_array[101952:102240], temps_array[101952])
 
-    # Initialize your tracking array and the starting panel temperature
-    case_5_daily_mwh = []
+        # Initialize your tracking array and the starting panel temperature
+        case_5_daily_mwh = []
 
-    # Start the panel at the ambient temperature at midnight on Jan 1
-    T_cell_initial = temps_array[0]
+        # Start the panel at the ambient temperature at midnight on Jan 1
+        T_cell_initial = temps_array[0]
 
-    # Loop through all 365 days of the year (Day 1 through Day 365)
-    for N in range(1, 366):
-        daily_oci = oci(monthly_max, N, annual_actual_energy)
-        I_array = simulate(N, t_5min, beta, gamma, OCI_manual=daily_oci)[1]
-        T_a_day = temps_array[(N - 1) * 288: N * 288]
-        T_cell_array, P_elec_array, T_cell_next = simulate_case_5(I_array, T_a_day, T_cell_initial)
-        daily_energy_mwh = sum(P_elec_array) * (5.0 / 60.0) / 1000000.0
-        case_5_daily_mwh.append(daily_energy_mwh)
-        T_cell_initial = T_cell_next
+        # Loop through all 365 days of the year (Day 1 through Day 365)
+        for N in range(1, 366):
+            daily_oci = oci(monthly_max, N, annual_actual_energy)
+            I_array = simulate(N, t_5min, beta, gamma, OCI_manual=daily_oci)[1]
+            T_a_day = temps_array[(N - 1) * 288: N * 288]
+            T_cell_array, P_elec_array, T_cell_next = simulate_case_5(I_array, T_a_day, T_cell_initial)
+            daily_energy_mwh = sum(P_elec_array) * (5.0 / 60.0) / 1000000.0
+            case_5_daily_mwh.append(daily_energy_mwh)
+            T_cell_initial = T_cell_next
 
-    case_5_daily_mwh = np.array(case_5_daily_mwh)
+        case_5_daily_mwh = np.array(case_5_daily_mwh)
 
-    # Jun 21 Panel Temp vs Time of Day sunny and cloudy plots
-    plt.plot(t_5min, jun21_clear_temps, label='Clear')
-    plt.plot(t_5min, jun21_cloudy_temps, label='Cloudy', linestyle='--')
-    plt.xlabel('Time of Day (hours)')
-    plt.xticks(np.arange(0, 25, 4))
-    plt.ylabel('Temperature (C)')
-    plt.title('Panel Temperature vs. Time of Day (June 21) - Case 5')
-    plt.grid(True, alpha=0.6)
-    plt.legend()
-    plt.tight_layout()
-    plt.show()
+        # Hourly Temperatures throughout the year with mins and maxes
+        plot_yearly_ambient_temps_with_extremes(temps_array, max_array, min_array)
 
-    # Jun 21 Ambient temp vs time of day
-    plt.plot(t_5min, temps_array[49248:49536])
-    plt.xlabel('Time of Day (hours)')
-    plt.xticks(np.arange(0, 25, 4))
-    plt.ylabel('Temperature (C)')
-    plt.title('Ambient Temperature vs. Time of Day (June 21)')
-    plt.grid(True, alpha=0.6)
-    plt.tight_layout()
-    plt.show()
+        # Jun 21 Panel Temp vs Time of Day sunny and cloudy plots
+        plt.plot(t_5min, jun21_clear_temps, label='Clear')
+        plt.plot(t_5min, jun21_cloudy_temps, label='Cloudy', linestyle='--')
+        plt.xlabel('Time of Day (hours)')
+        plt.xticks(np.arange(0, 25, 4))
+        plt.ylabel('Temperature (C)')
+        plt.title('Panel Temperature vs. Time of Day (June 21) - Case 5')
+        plt.grid(True, alpha=0.6)
+        plt.legend()
+        plt.tight_layout()
+        plt.show()
 
-    # Jun 21 Irradiance and total system power delivery vs Time of Day sunny, cloudy, and cloud model plots
-    fig, ax1 = plt.subplots()
+        # Jun 21 Ambient temp vs time of day
+        plt.plot(t_5min, temps_array[49248:49536])
+        plt.xlabel('Time of Day (hours)')
+        plt.xticks(np.arange(0, 25, 4))
+        plt.ylabel('Temperature (C)')
+        plt.title('Ambient Temperature vs. Time of Day (June 21)')
+        plt.grid(True, alpha=0.6)
+        plt.tight_layout()
+        plt.show()
 
-    ax1.plot(t_5min, jun21_clear_power / 1e3, label='Clear Power Output', color='blue')
-    ax1.plot(t_5min, jun21_cloudy_power / 1e3, label='Cloudy Power Output', linestyle='--', color='orange')
-    ax1.plot(t_5min, jun21_real_power / 1e3, label='Cloud Model Power Output', linestyle='-.', color='cyan')
-    ax1.set_xlabel('Time of Day (hours)')
-    ax1.set_xticks(np.arange(0, 25, 4))
-    ax1.set_ylabel('Power Output (kW)')
+        # Jun 21 Irradiance and total system power delivery vs Time of Day sunny, cloudy, and cloud model plots
+        fig, ax1 = plt.subplots()
 
-    ax2 = ax1.twinx()
-    ax2.plot(t_5min, jun21_clear_simulation[1] / 1e3, label='Clear Irradiance', linestyle=':', color='red')
-    ax2.plot(t_5min, jun21_cloudy_simulation[1] / 1e3, label='Cloudy Irradiance', linestyle=':', color='green')
-    ax2.plot(t_5min, jun21_real_simulation[1] / 1e3, label='Cloud Model Irradiance', linestyle=':', color='magenta')
-    ax2.set_ylabel('Irradiance (kW/m^2)')
+        ax1.plot(t_5min, jun21_clear_power / 1e3, label='Clear Power Output', color='blue')
+        ax1.plot(t_5min, jun21_real_power / 1e3, label='Cloud Model Power Output', linestyle='-.', color='cyan')
+        ax1.set_xlabel('Time of Day (hours)')
+        ax1.set_xticks(np.arange(0, 25, 4))
+        ax1.set_ylabel('Power Output (kW)')
 
-    handles1, labels1 = ax1.get_legend_handles_labels()
-    handles2, labels2 = ax2.get_legend_handles_labels()
-    ax1.legend(handles1 + handles2, labels1 + labels2)
+        ax2 = ax1.twinx()
+        ax2.plot(t_5min, jun21_clear_simulation[1] / 1e3, label='Clear Irradiance', linestyle=':', color='red')
+        ax2.plot(t_5min, jun21_real_simulation[1] / 1e3, label='Cloud Model Irradiance', linestyle=':', color='magenta')
+        ax2.set_ylabel('Irradiance (kW/m^2)')
 
-    plt.title('Irradiance and Total System Power vs. Time of Day (June 21) - Case 5')
-    plt.tight_layout()
-    plt.show()
+        handles1, labels1 = ax1.get_legend_handles_labels()
+        handles2, labels2 = ax2.get_legend_handles_labels()
+        ax1.legend(handles1 + handles2, labels1 + labels2)
 
-    # Total daily energy production (MWh) vs. Day of year starting from Jan 1
-    plt.plot(days_in_year, case_5_daily_mwh)
-    plt.xlabel('Day of the Year')
-    plt.xticks(np.arange(0, 366, 30))
-    plt.ylabel('Energy Production (MWh)')
-    plt.title('Total Daily Energy Production vs. Day of the Year - Case 5')
-    plt.tight_layout()
-    plt.show()
+        plt.title('Irradiance and Total System Power vs. Time of Day (June 21) - Case 5')
+        plt.tight_layout()
+        plt.show()
+
+        # Dec 21 Irradiance and total system power delivery vs Time of day cloudy
+        fig, ax1 = plt.subplots()
+
+        ax1.plot(t_5min, dec21_cloudy_power / 1e3, label='Power Output')
+        ax1.set_xlabel('Time of Day (hours)')
+        ax1.set_xticks(np.arange(0, 25, 4))
+        ax1.set_ylabel('Power Output (kW)')
+
+        ax2 = ax1.twinx()
+        ax2.plot(t_5min, dec21_cloudy_simulation[1] / 1e3, label='Irradiance', linestyle='--', color='orange')
+        ax2.set_ylabel('Irradiance (kW/m^2)')
+
+        handles1, labels1 = ax1.get_legend_handles_labels()
+        handles2, labels2 = ax2.get_legend_handles_labels()
+        ax1.legend(handles1 + handles2, labels1 + labels2)
+
+        plt.title('Cloudy Irradiance and Total System Power vs. Time of Day (Dec 21) - Case 5')
+        plt.tight_layout()
+        plt.show()
+
+        # Total daily energy production (MWh) vs. Day of year starting from Jan 1
+        plt.plot(days_in_year, case_5_daily_mwh)
+        plt.xlabel('Day of the Year')
+        plt.xticks(np.arange(0, 366, 30))
+        plt.ylabel('Energy Production (MWh)')
+        plt.title('Total Daily Energy Production vs. Day of the Year - Case 5')
+        plt.tight_layout()
+        plt.show()
 
     # </editor-fold>
 
-    # <editor-fold desc="Case 5">
+    # <editor-fold desc="Case 6">
     #-----Case 6: Battery Storage and Economic Analysis-----#
 
-    # Performance Plots (Feb 5)
-    # Clear Day (OCI=10) for 1x, 4x, 6x
-    for scale in [1, 4, 6]:
-        plot_case_6_performance(36, 10, scale, 6, cleaned_feb_data, cleaned_feb_data) # replace 2nd one with actual load data
+    if show_case_6:
+        # Performance Plots (Feb 5)
+        # Clear Day (OCI=10) for 1x, 4x, 6x
+        for scale in [1, 4, 6]:
+            plot_case_6_performance(36, 10, scale, 6, cleaned_feb_data, cleaned_feb_data) # replace 2nd one with actual load data
 
-    # Cloudy Day (OCI=5) for 4x, 6x
-    for scale in [4, 6]:
-        plot_case_6_performance(36, 5, scale, 6, cleaned_feb_data, cleaned_feb_data)
+        # Cloudy Day (OCI=5) for 4x, 6x
+        for scale in [4, 6]:
+            plot_case_6_performance(36, 5, scale, 6, cleaned_feb_data, cleaned_feb_data)
 
-    #Economic Sensitivity Plots
-    plot_case_6_economics(4, annual_actual_energy, monthly_max)
-    plot_case_6_economics(6, annual_actual_energy, monthly_max)
+        #Economic Sensitivity Plots
+        plot_case_6_economics(4, annual_actual_energy, monthly_max)
+        plot_case_6_economics(6, annual_actual_energy, monthly_max)
       # </editor-fold>
 
 
