@@ -17,8 +17,9 @@ def main():
     show_case_2 = 0
     show_case_3 = 0
     show_case_4 = 0
-    show_case_5 = 0
-    show_case_6 = 1
+    show_case_5 = 1
+    show_case_6 = 0
+    show_annual_calc = 0
 
     # Relevant days and times
     # Feb 5, N = 36
@@ -32,12 +33,12 @@ def main():
     ## Comment or Uncomment Depending on what we're plotting ##
 
     # For plots vs time of day on individual days
-    N = np.array([355]) # Edit for plots of certain days
-    day_name = 'Dec 21'
+    # N = np.array([355]) # Edit for plots of certain days
+    # day_name = 'Dec 21'
 
     # # For plots vs day of the year at individual times
-    # N = np.linspace(0, 365, 365)  # Day number where Jan 1st is 1
-    # day_name = ''
+    N = np.linspace(0, 365, 365)  # Day number where Jan 1st is 1
+    day_name = ''
 
     beta = 22 # Panel angle for case 1 and 2
     gamma = 46 # Panel azimuthal angle
@@ -112,44 +113,45 @@ def main():
 
         # Plots vs day of the year
         if not day_name:
-            plot_theta_i(N, theta_i_noon) # *
+            plot_theta_i(N, theta_i_noon)
             plot_energy(N, total_system_energy/1000, annual_actual_energy/1000) # Converts kWh to MWh for plotting
     # </editor-fold>
 
     # <editor-fold desc="Annual MWh Calculation">
     # -----  Annual MWh Calculation -------
-    energy_case1_annual = 0
-    energy_case3_annual = 0
-    energy_cloudy_annual = 0
-    daily_mwh_case3 = []
-    daily_mwh_cloudy = [] 
-    for day in days_in_year:
-        # Case 1 Daily Energy
-        p1 = simulate(day,t_5min,beta,gamma)[0]
-        e1 = np.trapezoid(p1 * 960, t_5min) / 1e6 # MWh for 960 panels
-        energy_case1_annual += e1
+    if show_annual_calc:
+        energy_case1_annual = 0
+        energy_case3_annual = 0
+        energy_cloudy_annual = 0
+        daily_mwh_case3 = []
+        daily_mwh_cloudy = []
+        for day in days_in_year:
+            # Case 1 Daily Energy
+            p1 = simulate(day,t_5min,beta,gamma)[0]
+            e1 = np.trapezoid(p1 * 960, t_5min) / 1e6 # MWh for 960 panels
+            energy_case1_annual += e1
 
-        # Case 3 Daily Energy
-        p3, irr3, beta3 = simulate_case_3(day, t_5min, gamma)
-        e3 = np.trapezoid(p3 * 960, t_5min) / 1e6 # MWh for 960 panels
-        energy_case3_annual += e3
-        daily_mwh_case3.append(e3)
+            # Case 3 Daily Energy
+            p3, irr3, beta3 = simulate_case_3(day, t_5min, gamma)
+            e3 = np.trapezoid(p3 * 960, t_5min) / 1e6 # MWh for 960 panels
+            energy_case3_annual += e3
+            daily_mwh_case3.append(e3)
 
-        # Cloudy Daily Energy
-        p_cloudy = simulate(day, t_5min, beta, gamma, annual_energy_array=annual_actual_energy, monthly_max=monthly_max)[0]        
-        e_cloudy = np.trapezoid(p_cloudy * 960, t_5min) / 1e6
-        energy_cloudy_annual += e_cloudy
-        daily_mwh_cloudy.append(e_cloudy)
-    # Output Table of Annual Energy Production for Case 1 and Case 3 compared to 2019
+            # Cloudy Daily Energy
+            p_cloudy = simulate(day, t_5min, beta, gamma, annual_energy_array=annual_actual_energy, monthly_max=monthly_max)[0]
+            e_cloudy = np.trapezoid(p_cloudy * 960, t_5min) / 1e6
+            energy_cloudy_annual += e_cloudy
+            daily_mwh_cloudy.append(e_cloudy)
+        # Output Table of Annual Energy Production for Case 1 and Case 3 compared to 2019
 
-    energy_actual_annual = np.sum(annual_actual_energy) / 1000 # MWh of 2019 actual energy
-    print("\n" + "="*45)
-    print(f"{'Case Study':<25} | {'Annual Energy (MWh)':<15}")
-    print("-" * 45)
-    print(f"{'Case 1 (Base; Fixed Tilt)':<25} | {energy_case1_annual:>15.4f}")
-    print(f"{'Case 3 (Tracking)':<25} | {energy_case3_annual:>15.4f}")
-    print(f"{'2019 Actual Data':<25} | {energy_actual_annual:>15.4f}")
-    print("="*45)
+        energy_actual_annual = np.sum(annual_actual_energy) / 1000 # MWh of 2019 actual energy
+        print("\n" + "="*45)
+        print(f"{'Case Study':<25} | {'Annual Energy (MWh)':<15}")
+        print("-" * 45)
+        print(f"{'Case 1 (Base; Fixed Tilt)':<25} | {energy_case1_annual:>15.4f}")
+        print(f"{'Case 3 (Tracking)':<25} | {energy_case3_annual:>15.4f}")
+        print(f"{'2019 Actual Data':<25} | {energy_actual_annual:>15.4f}")
+        print("="*45)
     # </editor-fold>
 
     # <editor-fold desc="Case 2">
@@ -268,7 +270,15 @@ def main():
         T_cell_initial = temps_array[0]
 
         # Loop through all 365 days of the year (Day 1 through Day 365)
+        i = 0
+        case1_total_system_energy = np.zeros(365)
+        case_4_daily_mwh = []
+        pec_actual_kwh = get_annual_daily_energy_array('PEC 15 minute data for 2019.csv')
         for N in range(1, 366):
+
+            case1_energy = simulate(N, t_5min, beta, gamma)[0]
+            case1_total_system_energy[i] = np.trapezoid(case1_energy, t_5min)
+
             daily_oci = oci(monthly_max, N, annual_actual_energy)
             I_array = simulate(N, t_5min, beta, gamma, OCI_manual=daily_oci)[1]
             T_a_day = temps_array[(N - 1) * 288: N * 288]
@@ -277,7 +287,13 @@ def main():
             case_5_daily_mwh.append(daily_energy_mwh)
             T_cell_initial = T_cell_next
 
-        case_5_daily_mwh = np.array(case_5_daily_mwh)
+            # ripped from case 4 so that I don't have to turn show_case_4 on
+            power_cloudy = simulate(N, t_5min, beta, gamma, annual_energy_array=annual_actual_energy, monthly_max=monthly_max)[0]
+            energy_cloudy = np.trapezoid(power_cloudy * 960, t_5min) / 1e6
+            case_4_daily_mwh.append(energy_cloudy)
+
+            i+=1
+
 
         # Hourly Temperatures throughout the year with mins and maxes
         plot_yearly_ambient_temps_with_extremes(temps_array, max_array, min_array)
@@ -307,15 +323,15 @@ def main():
         # Jun 21 Irradiance and total system power delivery vs Time of Day sunny, cloudy, and cloud model plots
         fig, ax1 = plt.subplots()
 
-        ax1.plot(t_5min, jun21_clear_power / 1e3, label='Clear Power Output', color='blue')
-        ax1.plot(t_5min, jun21_real_power / 1e3, label='Cloud Model Power Output', linestyle='-.', color='cyan')
+        ax1.plot(t_5min, jun21_clear_power / 1e3, label='Clear Power Output',color='b')
+        ax1.plot(t_5min, jun21_real_power / 1e3, label='Cloud Model Power Output', color='g')
         ax1.set_xlabel('Time of Day (hours)')
         ax1.set_xticks(np.arange(0, 25, 4))
         ax1.set_ylabel('Power Output (kW)')
 
         ax2 = ax1.twinx()
-        ax2.plot(t_5min, jun21_clear_simulation[1] / 1e3, label='Clear Irradiance', linestyle=':', color='red')
-        ax2.plot(t_5min, jun21_real_simulation[1] / 1e3, label='Cloud Model Irradiance', linestyle=':', color='magenta')
+        ax2.plot(t_5min, jun21_clear_simulation[1] / 1e3, label='Clear Irradiance', linestyle='--', color='orange')
+        ax2.plot(t_5min, jun21_real_simulation[1] / 1e3, label='Cloud Model Irradiance', linestyle='--', color='r')
         ax2.set_ylabel('Irradiance (kW/m^2)')
 
         handles1, labels1 = ax1.get_legend_handles_labels()
@@ -347,13 +363,30 @@ def main():
         plt.show()
 
         # Total daily energy production (MWh) vs. Day of year starting from Jan 1
-        plt.plot(days_in_year, case_5_daily_mwh)
+        case_1_daily_mwh = case1_total_system_energy / 1e3
+        case_2_daily_mwh_45c = case_1_daily_mwh * .91
+        case_2_daily_mwh_85c = case_2_daily_mwh_45c * .73
+        case_2_daily_mwh_0c = case_2_daily_mwh_85c * 1.1125
+        case_4_daily_mwh = np.array(case_4_daily_mwh)
+        case_5_daily_mwh = np.array(case_5_daily_mwh)
+        pec_actual_mwh = np.array(pec_actual_kwh) / 1e3
+
+        plt.plot(days_in_year, case_1_daily_mwh, label='Case 1')
+        plt.plot(days_in_year, case_2_daily_mwh_0c, label='Case 2 0C')
+        plt.plot(days_in_year, case_2_daily_mwh_45c, label='Case 2 45C')
+        plt.plot(days_in_year, case_2_daily_mwh_85c, label='Case 2 85C')
+        plt.plot(days_in_year, case_4_daily_mwh, label='Case 4')
+        plt.plot(days_in_year, case_5_daily_mwh, label='Case 5')
+        plt.plot(days_in_year, pec_actual_mwh, label='PEC')
         plt.xlabel('Day of the Year')
         plt.xticks(np.arange(0, 366, 30))
         plt.ylabel('Energy Production (MWh)')
-        plt.title('Total Daily Energy Production vs. Day of the Year - Case 5')
+        plt.title('Total Daily Energy Production vs. Day of the Year and Comparisons - Case 5')
+        plt.legend()
         plt.tight_layout()
         plt.show()
+
+
 
     # </editor-fold>
 
@@ -741,23 +774,28 @@ def get_power_outputs_2019(file_path, n_array):
 
     return results
 
-def get_actual_data_2026(file_path):
+
+def get_power_outputs_2026(file_path):
     """
-    Extracts and cleans both Solar and Load data from the 2026 CSV.
+    Extracts and cleans solar power data from the 2026 PEC CSV.
+
+    Returns:
+    np.array: Cleaned solar power values in kW.
     """
+    # 1. Load the CSV
     df = pd.read_csv(file_path)
+
+    # 2. Convert to datetime and sort (the 2026 file is currently in reverse order)
     df['Date & Time'] = pd.to_datetime(df['Date & Time'])
     df = df.sort_values(by='Date & Time')
 
-    # Extract Solar (last column)
-    raw_solar = df['Solar [kW]'].values
-    cleaned_power = np.maximum(raw_solar, 0)
+    # 3. Extract the 'Solar [kW]' column
+    raw_power = df['Solar [kW]'].values
 
-    # Extract Load (second column, index 1)
-    # Using .iloc[:, 1] is safer if the header is just "[kW]"
-    actual_load = df.iloc[:, 1].values 
+    # 4. Clean nighttime parasitic noise (clamping values < 0 to 0)
+    cleaned_power = np.maximum(raw_power, 0)
 
-    return cleaned_power, actual_load
+    return cleaned_power
 
 
 def get_annual_daily_energy_array(file_path):
@@ -848,8 +886,7 @@ def oci(monthly_max, N, annual_energy_array):
     month_of_n = next(month for month, day_range in months_2019.items() if N in day_range)
     # calc OCI
     max_E = monthly_max[month_of_n]
-    OCI = 10 * (1 - (E - 0.05*max_E) / (max_E - 0.05*max_E)) # we want to get OCI values between 0-10
-    #OCI = 10 - (E-0.05*max_E)/(max_E-0.05*max_E)
+    OCI = 10 - (E-0.05*max_E)/(max_E-0.05*max_E)
 
     return OCI
 
@@ -1085,17 +1122,31 @@ def apply_dst(t, date):
 #  Idealized PEC power use for a typical summer and winter day 
 # summer days go from June 1 to Nov. 20 and the winter days are from Nov. 21 to May 31
 def load_model(t, date):
-    # Summer: June 1 to Nov 20
-    is_summer = (date >= datetime(date.year, 6, 1)) and (date <= datetime(date.year, 11, 20))
+    month = date.month
+    day = date.day
+
+    is_summer = (
+        (month > 6 and month < 11) or
+        (month == 6 and day >= 1) or
+        (month == 11 and day <= 20)
+    )
 
     if is_summer:
-        if 0 <= t < 6: return 220      # 12am - 6am
-        elif 6 <= t < 19: return 580   # 6am - 7pm
-        else: return 220               # 7pm - 12am
+        # Summer
+        if 0 <= t < 6:
+            return 220
+        elif 6 <= t < 19:
+            return 220
+        else:
+            return 580
     else:
-        if 0 <= t < 6: return 200      # 12am - 6am
-        elif 6 <= t < 18: return 300   # 6am - 6pm
-        else: return 220               # 6pm - 12am
+        # Winter
+        if 0 <= t < 6:
+            return 200
+        elif 6 <= t < 18:
+            return 200
+        else:
+            return 300
 
 def battery_step(pv, load, current_capacity, max_capacity):
 
@@ -1152,40 +1203,38 @@ def get_scaled_pv_power(N, t_array, panel_scale, oci_val):
     T_a_day = np.array(all_amb_temps[(N-1)*288 : N*288])
 
     for gamma_val, multiplier in config.items():
-        # res[1] is I_array in W/m^2
+        # Get irradiance (res[1]) from simulate function
         res = simulate(N, t_array, beta=22, gamma=gamma_val, OCI_manual=oci_val)
         irr_array = res[1] 
-    
-        # returns Watts
+        
+        # Calculate electrical power (W) for one panel based on case 5 irradiance and  dynamic temperature
         _, p_single_panel_watts, _ = simulate_case_5(irr_array, T_a_day, T_cell_initial=T_a_day[0])
+        
+        # 3. Summation: (Watts * number_of_panels) / 1000 = kW
+        # For scale 4x, this should be (p_single * 960 * 4) total
         num_panels_in_block = 960 * multiplier
-        # (Watts * Number) / 1000 = kiloWatts
         total_kw_array += (p_single_panel_watts * num_panels_in_block) / 1000.0
 
     return total_kw_array
 
-def run_case_6_simulation(N, oci_val, panel_scale, battery_packs, pv_precalc=None, start_soc=None):
+def run_case_6_simulation(N, oci_val, panel_scale, battery_packs, pv_precalc=None):
     t_5min = np.linspace(0, 24, 288)
-    capacity_kwh = battery_packs * 210 
-    
-    if start_soc is None:
-        current_soc = 0.5 * capacity_kwh
-    else:
-        current_soc = start_soc
+    capacity_kwh = battery_packs * 210 # pack_capacity
     
     if pv_precalc is not None:
-        pv_total_kw = pv_precalc
+        pv_total_kw = pv_precalc  # Use the fast pre-calculated data instead of running thousands of times
     else:
         pv_total_kw = get_scaled_pv_power(N, t_5min, panel_scale, oci_val)
+    # ---------------------
 
     soc_history, grid_buy, grid_sell, load_history = [], [], [], []
+    current_soc = 0.5 * capacity_kwh
     current_date = datetime(2026, 1, 1) + timedelta(days=int(N-1))
 
     for i, t_local in enumerate(t_5min):
         t_corrected = apply_dst(t_local, current_date)
         load_kw = load_model(t_corrected, current_date)
         
-        # Battery step updates current_soc based on surplus/deficit
         new_soc, g_in, g_out = battery_step(pv_total_kw[i], load_kw, current_soc, capacity_kwh)
         
         soc_history.append(current_soc)
@@ -1195,16 +1244,10 @@ def run_case_6_simulation(N, oci_val, panel_scale, battery_packs, pv_precalc=Non
         current_soc = new_soc
 
     return {
-        "time": t_5min, 
-        "pv_kw": pv_total_kw, 
-        "load_kw": np.array(load_history),
-        "soc_kwh": np.array(soc_history), 
-        "grid_buy_kw": np.array(grid_buy),
-        "grid_sell_kw": np.array(grid_sell),
-        "final_soc": current_soc  # allows the loop to "remember" the battery level
+        "time": t_5min, "pv_kw": pv_total_kw, "load_kw": np.array(load_history),
+        "soc_kwh": np.array(soc_history), "grid_buy_kw": np.array(grid_buy),
+        "grid_sell_kw": np.array(grid_sell)
     }
-
-
 # Economic Model - annual cost from 10 year cost
 def compute_annual_total_cost(results, buy_price, sell_price, battery_packs):
     # Sum the 5-min steps and convert to kWh
@@ -1226,7 +1269,11 @@ def compute_annual_total_cost(results, buy_price, sell_price, battery_packs):
 
 #Plotting functions for Case 6
 def plot_case_6_performance(N, oci_val, panel_scale, battery_packs, actual_pv_kw, actual_load_kw):
-
+    """
+    Plots PV, Load, Grid Purchase, and Battery SOC for a specific day.
+    Includes scatter points for actual eGauge data.
+    """
+    # 1. Run Simulation
     res = run_case_6_simulation(N, oci_val, panel_scale, battery_packs)
     
     fig, ax1 = plt.subplots(figsize=(12, 6))
@@ -1240,7 +1287,7 @@ def plot_case_6_performance(N, oci_val, panel_scale, battery_packs, actual_pv_kw
     # Scatter actual data
     t_actual = np.linspace(0, 24, len(actual_pv_kw))
     ax1.scatter(t_actual, actual_pv_kw, color='darkgreen', s=15, alpha=0.6, label='Actual PV (eGauge)')
-    ax1.scatter(t_actual, actual_load_kw, color='darkred', s=15, alpha=0.6, label='Actual Load (eGauge)') #not sure if this is different?
+    ax1.scatter(t_actual, actual_load_kw, color='darkred', s=15, alpha=0.6, label='Actual Load (eGauge)')
     
     # --- Right Axis: Battery Energy (kWh) ---
     ax2.fill_between(res["time"], 0, res["soc_kwh"], color='orange', alpha=0.15, label='Battery Energy (kWh)')
@@ -1266,44 +1313,36 @@ def plot_case_6_performance(N, oci_val, panel_scale, battery_packs, actual_pv_kw
 def plot_case_6_economics(panel_scale, annual_actual_energy, monthly_max):
     buy_prices = np.linspace(0.06, 0.18, 7)
     pack_options = [0, 6, 12]
-    sell_back_ratios = [0, 0.5, 1] 
+    sell_back_options = [0.00, 0.04] 
     t_5min = np.linspace(0, 24, 288)
     
-    # Pre-calculate the entire year of PV
+    # 1. Pre-calculate the entire year of PV (Takes ~10-15 seconds)
     print(f"Pre-calculating solar for {panel_scale}x expansion...")
     yearly_pv = []
-
     for N in range(1, 366):
         daily_oci = oci(monthly_max, N, annual_actual_energy)
         yearly_pv.append(get_scaled_pv_power(N, t_5min, panel_scale, daily_oci))
-
+    
     for packs in pack_options:
-        for ratio in sell_back_ratios:
+        print(f"Simulating {packs} packs...")
+        for sell_p in sell_back_options:
             annual_costs = []
             for buy_p in buy_prices:
-                sell_p = buy_p * ratio
                 total_annual_spend = 0
-                
-                # Start Jan 1st at 50% capacity
-                current_battery_level = 0.5 * (packs * 210) 
-                
                 for N in range(1, 366):
-                    # Pass the current_battery_level into the sim
-                    res = run_case_6_simulation(N, None, panel_scale, packs, pv_precalc=yearly_pv[N-1], start_soc=current_battery_level)
-                    
-                    # UPDATE current_battery_level with the sim's final_soc for the next day
-                    current_battery_level = res["final_soc"]
+                    # Pass the pre-calculated PV to skip the physics
+                    res = run_case_6_simulation(N, None, panel_scale, packs, pv_precalc=yearly_pv[N-1])
                     
                     import_kwh = np.sum(res["grid_buy_kw"]) * (5/60)
                     export_kwh = np.sum(res["grid_sell_kw"]) * (5/60)
                     total_annual_spend += (import_kwh * buy_p) - (export_kwh * sell_p)
                 
-                # 10-year math
-                inv = (packs * 210) * 115
-                maint = 0.05 * inv * 10
-                annual_costs.append(((total_annual_spend * 10) + inv + maint) / 10)
+                # 10-year annualized math
+                cap_kwh = packs * 210
+                inv = cap_kwh * 115
+                annual_costs.append(((total_annual_spend * 10) + inv + (0.05 * inv * 10)) / 10)
             
-            plt.plot(buy_prices, annual_costs, marker='o', label=f"{packs} Pks, {ratio}x Sell")
+            plt.plot(buy_prices, annual_costs, marker='o', label=f"{packs} Packs, ${sell_p} Sell")
     
     plt.xlabel('Austin Energy Purchase Price ($/kWh)')
     plt.ylabel('Average Total Yearly Cost ($)')
