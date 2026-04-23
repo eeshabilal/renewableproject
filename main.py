@@ -13,13 +13,13 @@ def main():
     # <editor-fold desc="Control Panel">
     """"""""""""""""""""""""""" Control Panel """""""""""""""""""""""""""""
     # For when you're testing stuff and everyone else's work is slowing you down
-    show_case_1 = 0
-    show_case_2 = 0
-    show_case_3 = 0
-    show_case_4 = 0
-    show_case_5 = 1
+    show_case_1 = 1
+    show_case_2 = 1
+    show_case_3 = 1
+    show_case_4 = 1
+    show_case_5 = 0
     show_case_6 = 0
-    show_annual_calc = 0
+    show_annual_calc = 1
 
     # Relevant days and times
     # Feb 5, N = 36
@@ -37,7 +37,7 @@ def main():
     # day_name = 'Dec 21'
 
     # # For plots vs day of the year at individual times
-    N = np.linspace(0, 365, 365)  # Day number where Jan 1st is 1
+    N = np.arange(1, 366)  # Day number where Jan 1st is 1
     day_name = ''
 
     beta = 22 # Panel angle for case 1 and 2
@@ -64,7 +64,7 @@ def main():
 
     cleaned_2019_data = get_power_outputs_2019('PEC 15 minute data for 2019.csv', days_needed)
     annual_actual_energy = get_annual_daily_energy_array('PEC 15 minute data for 2019.csv')
-    cleaned_feb_data, feb_load_data  = get_actual_data_2026('pec 15 minute data for 2.5.2026.csv')
+    #cleaned_feb_data, feb_load_data  = get_power_outputs_2026('pec 15 minute data for 2.5.2026.csv')
     monthly_max, monthly_total = max_monthly_energy_2019(annual_actual_energy)
     total_system_energy = np.zeros(len(N))  # kWh
 
@@ -237,15 +237,56 @@ def main():
     # <editor-fold desc="Case 4">
     # ---- For Case 4: cloudy data ----
     if show_case_4:
-        # Plot cloudy daily power output over the year
+        # Plot cloudy daily power output over the year 2019
         plt.figure()
         plt.plot(days_in_year, daily_mwh_cloudy, label='Cloudy')
         plt.plot(days_in_year, [np.trapezoid(simulate(d, t_5min, beta, gamma)[0] * 960, t_5min) / 1e6 for d in days_in_year], label='Clear')
+        plt.plot(days_in_year, annual_actual_energy / 1000, label='2019 Actual')
         plt.xlabel('Day of Year')
         plt.ylabel('Daily Energy (MWh)')
-        plt.title('Cloudy vs Clear Sky Power Output')
+        plt.title('Case 4 Cloudy vs Clear Sky Power Output (2019)')
         plt.legend()
         plt.show()
+
+        # Plot cloudy power output for 1 day in June and one day in December compared to clear sky and 2019 actual data for those days
+        cloudy_sets = {
+            "Dec 21 - Cloudy (OCI=10)": {"day": 355}, # this day OCI must be 10
+            "Jun 21 - Cloudy": {"day": 172} # this day OCI we must calculate
+        }
+
+        for label, data in cloudy_sets.items():
+            fig, axis1 = plt.subplots(figsize=(10, 6))
+            axis2 = axis1.twinx()
+
+            day = data["day"]
+
+            # cloudy simulation using OCI
+            power_cloudy, irr_cloudy, _, _ = simulate(day, t_5min, beta, gamma,
+                                                    annual_energy_array=annual_actual_energy,
+                                                    monthly_max=monthly_max)
+            # clear sky simulation for comparison
+            power_clear, irr_clear, _, _ = simulate(day, t_5min, beta, gamma)
+
+            # print OCI for reference
+            oci_val = oci(monthly_max, day, annual_actual_energy)
+            print(f"{label}: OCI = {oci_val:.2f}")
+
+            axis1.plot(t_5min, power_cloudy * 960 / 1000, label='Cloudy Power', color='steelblue')
+            axis1.plot(t_5min, power_clear * 960 / 1000, label='Clear Sky Power', color='blue', linestyle='--')
+            axis1.plot(t_15min, cleaned_2019_data[day], linestyle=':', label='2019 Actual Power')
+            axis2.plot(t_5min, irr_cloudy / 1000, color='orange', linestyle='--', label='Cloudy Irradiance')
+            axis2.plot(t_5min, irr_clear / 1000, color='gold', linestyle=':', label='Clear Irradiance')
+
+            axis1.set_xlabel('Time of Day (hours)', fontweight='bold')
+            axis1.set_ylabel('Total System Power Delivery (kW)', color='blue', fontweight='bold')
+            axis2.set_ylabel('Irradiance (kW/m^2)', color='orange', fontweight='bold')
+            plt.title(f"Case 4Irradiance and System Power: {label}", fontweight='bold')
+            axis1.grid(True, alpha=0.6)
+
+            lines1, labels1 = axis1.get_legend_handles_labels()
+            lines2, labels2 = axis2.get_legend_handles_labels()
+            axis1.legend(lines1 + lines2, labels1 + labels2, loc='upper left')
+            plt.show()
     # </editor-fold>
 
     # <editor-fold desc="Case 5">
@@ -863,7 +904,6 @@ def max_monthly_energy_2019(annual_energy_array):
 
     return monthly_max, monthly_total
 
-# NOTE: needs improvement
 def oci(monthly_max, N, annual_energy_array): 
     months_2019 = {
         "Jan": range(1, 32),
@@ -886,7 +926,9 @@ def oci(monthly_max, N, annual_energy_array):
     month_of_n = next(month for month, day_range in months_2019.items() if N in day_range)
     # calc OCI
     max_E = monthly_max[month_of_n]
-    OCI = 10 - (E-0.05*max_E)/(max_E-0.05*max_E)
+    if E < 0.05 * max_E:
+        return 10.0
+    OCI = 10 - 10*((E-0.05*max_E)/(0.95*max_E))
 
     return OCI
 
@@ -898,20 +940,33 @@ def beam_transmissivity_cloudy(N, theta_z, A, OCI):
 
 def diffuse_transmittivity_cloudy(N, theta_z, A, OCI): 
     tau_b_cloudy = beam_transmissivity_cloudy(N, theta_z, A, OCI)
-    tau_d_cloudy = (1 - (0.75)*OCI/10) * (0.271 - 0.294 * tau_b_cloudy)
+    tau_d_cloudy = (1 - 0.75*OCI/10) * (0.271 - 0.294 * tau_b_cloudy)
     return tau_d_cloudy
 
-# NOTE: doublecheck
 def diffuse_radiation_cloudy(I_0, theta_z, tau_d_cloudy, beta):
     # theta_z = math.radians(theta_z) # uncomment for testing hand calcs w degrees
     beta = math.radians(beta)
     return I_0 * math.cos(theta_z) * tau_d_cloudy * ((1 + math.cos(beta)) / 2)
 
-# NOTE: doublecheck
 def beam_radiation_cloudy(I_0, tau_b_cloudy, theta_i):
     # theta_z = math.radians(theta_z) # uncomment for testing hand calcs w degrees
     return I_0 * tau_b_cloudy * math.cos(theta_i)
 
+def simulate_cloudy_day(N, t, beta, gamma, annual_actual_energy, monthly_max,
+                         OCI_manual=None, T_cell=25):
+    # determine OCI
+    if OCI_manual is not None:
+        oci_val = OCI_manual
+        cloudy_power, cloudy_irradiance, cloudy_bd, theta = simulate(N, t, beta, gamma, T_cell=T_cell, OCI_manual=oci_val)
+    else:
+        oci_val = oci(monthly_max, N, annual_actual_energy)
+        cloudy_power, cloudy_irradiance, cloudy_bd, theta = simulate(N, t, beta, gamma, T_cell=T_cell,
+                                                                    annual_energy_array=annual_actual_energy,monthly_max=monthly_max)
+
+    # clear sky for comparison
+    clear_power, clear_irradiance, clear_bd, theta = simulate(N, t, beta, gamma, T_cell=T_cell)
+
+    return cloudy_power, cloudy_irradiance, clear_power, clear_irradiance, oci_val
 
 # Case 5 - Solar panel temps
 # ------Ambient Temperature Model---------
@@ -1206,10 +1261,10 @@ def get_scaled_pv_power(N, t_array, panel_scale, oci_val):
         # Get irradiance (res[1]) from simulate function
         res = simulate(N, t_array, beta=22, gamma=gamma_val, OCI_manual=oci_val)
         irr_array = res[1] 
-        
+
         # Calculate electrical power (W) for one panel based on case 5 irradiance and  dynamic temperature
         _, p_single_panel_watts, _ = simulate_case_5(irr_array, T_a_day, T_cell_initial=T_a_day[0])
-        
+
         # 3. Summation: (Watts * number_of_panels) / 1000 = kW
         # For scale 4x, this should be (p_single * 960 * 4) total
         num_panels_in_block = 960 * multiplier
@@ -1234,7 +1289,7 @@ def run_case_6_simulation(N, oci_val, panel_scale, battery_packs, pv_precalc=Non
     for i, t_local in enumerate(t_5min):
         t_corrected = apply_dst(t_local, current_date)
         load_kw = load_model(t_corrected, current_date)
-        
+
         new_soc, g_in, g_out = battery_step(pv_total_kw[i], load_kw, current_soc, capacity_kwh)
         
         soc_history.append(current_soc)
@@ -1313,7 +1368,7 @@ def plot_case_6_performance(N, oci_val, panel_scale, battery_packs, actual_pv_kw
 def plot_case_6_economics(panel_scale, annual_actual_energy, monthly_max):
     buy_prices = np.linspace(0.06, 0.18, 7)
     pack_options = [0, 6, 12]
-    sell_back_options = [0.00, 0.04] 
+    sell_back_options = [0.00, 0.04]
     t_5min = np.linspace(0, 24, 288)
     
     # 1. Pre-calculate the entire year of PV (Takes ~10-15 seconds)
@@ -1322,7 +1377,7 @@ def plot_case_6_economics(panel_scale, annual_actual_energy, monthly_max):
     for N in range(1, 366):
         daily_oci = oci(monthly_max, N, annual_actual_energy)
         yearly_pv.append(get_scaled_pv_power(N, t_5min, panel_scale, daily_oci))
-    
+
     for packs in pack_options:
         print(f"Simulating {packs} packs...")
         for sell_p in sell_back_options:
