@@ -13,12 +13,12 @@ def main():
     # <editor-fold desc="Control Panel">
     """"""""""""""""""""""""""" Control Panel """""""""""""""""""""""""""""
     # For when you're testing stuff and everyone else's work is slowing you down
-    show_case_1 = 1
+    show_case_1 = 0
     show_case_2 = 0
     show_case_3 = 0
     show_case_4 = 0
     show_case_5 = 0
-    show_case_6 = 0
+    show_case_6 = 1
 
     # Relevant days and times
     # Feb 5, N = 36
@@ -63,7 +63,7 @@ def main():
 
     cleaned_2019_data = get_power_outputs_2019('PEC 15 minute data for 2019.csv', days_needed)
     annual_actual_energy = get_annual_daily_energy_array('PEC 15 minute data for 2019.csv')
-    cleaned_feb_data = get_power_outputs_2026('pec 15 minute data for 2.5.2026.csv')
+    cleaned_feb_data, feb_load_data  = get_actual_data_2026('pec 15 minute data for 2.5.2026.csv')
     monthly_max, monthly_total = max_monthly_energy_2019(annual_actual_energy)
     total_system_energy = np.zeros(len(N))  # kWh
 
@@ -364,11 +364,11 @@ def main():
         # Performance Plots (Feb 5)
         # Clear Day (OCI=10) for 1x, 4x, 6x
         for scale in [1, 4, 6]:
-            plot_case_6_performance(36, 10, scale, 6, cleaned_feb_data, cleaned_feb_data) # replace 2nd one with actual load data
+            plot_case_6_performance(36, None, scale, 6, cleaned_feb_data, feb_load_data) # need to check OCI, it only worked when I put in None?
 
         # Cloudy Day (OCI=5) for 4x, 6x
         for scale in [4, 6]:
-            plot_case_6_performance(36, 5, scale, 6, cleaned_feb_data, cleaned_feb_data)
+            plot_case_6_performance(36, 5, scale, 6, cleaned_feb_data, feb_load_data)
 
         #Economic Sensitivity Plots
         plot_case_6_economics(4, annual_actual_energy, monthly_max)
@@ -741,28 +741,23 @@ def get_power_outputs_2019(file_path, n_array):
 
     return results
 
-
-def get_power_outputs_2026(file_path):
+def get_actual_data_2026(file_path):
     """
-    Extracts and cleans solar power data from the 2026 PEC CSV.
-
-    Returns:
-    np.array: Cleaned solar power values in kW.
+    Extracts and cleans both Solar and Load data from the 2026 CSV.
     """
-    # 1. Load the CSV
     df = pd.read_csv(file_path)
-
-    # 2. Convert to datetime and sort (the 2026 file is currently in reverse order)
     df['Date & Time'] = pd.to_datetime(df['Date & Time'])
     df = df.sort_values(by='Date & Time')
 
-    # 3. Extract the 'Solar [kW]' column
-    raw_power = df['Solar [kW]'].values
+    # Extract Solar (last column)
+    raw_solar = df['Solar [kW]'].values
+    cleaned_power = np.maximum(raw_solar, 0)
 
-    # 4. Clean nighttime parasitic noise (clamping values < 0 to 0)
-    cleaned_power = np.maximum(raw_power, 0)
+    # Extract Load (second column, index 1)
+    # Using .iloc[:, 1] is safer if the header is just "[kW]"
+    actual_load = df.iloc[:, 1].values 
 
-    return cleaned_power
+    return cleaned_power, actual_load
 
 
 def get_annual_daily_energy_array(file_path):
@@ -1089,31 +1084,17 @@ def apply_dst(t, date):
 #  Idealized PEC power use for a typical summer and winter day 
 # summer days go from June 1 to Nov. 20 and the winter days are from Nov. 21 to May 31
 def load_model(t, date):
-    month = date.month
-    day = date.day
-
-    is_summer = (
-        (month > 6 and month < 11) or
-        (month == 6 and day >= 1) or
-        (month == 11 and day <= 20)
-    )
+    # Summer: June 1 to Nov 20
+    is_summer = (date >= datetime(date.year, 6, 1)) and (date <= datetime(date.year, 11, 20))
 
     if is_summer:
-        # Summer
-        if 0 <= t < 6:
-            return 220
-        elif 6 <= t < 19:
-            return 220
-        else:
-            return 580
+        if 0 <= t < 6: return 220      # 12am - 6am
+        elif 6 <= t < 19: return 580   # 6am - 7pm
+        else: return 220               # 7pm - 12am
     else:
-        # Winter
-        if 0 <= t < 6:
-            return 200
-        elif 6 <= t < 18:
-            return 200
-        else:
-            return 300
+        if 0 <= t < 6: return 200      # 12am - 6am
+        elif 6 <= t < 18: return 300   # 6am - 6pm
+        else: return 220               # 6pm - 12am
 
 def battery_step(pv, load, current_capacity, max_capacity):
 
@@ -1170,38 +1151,40 @@ def get_scaled_pv_power(N, t_array, panel_scale, oci_val):
     T_a_day = np.array(all_amb_temps[(N-1)*288 : N*288])
 
     for gamma_val, multiplier in config.items():
-        # Get irradiance (res[1]) from simulate function
+        # res[1] is I_array in W/m^2
         res = simulate(N, t_array, beta=22, gamma=gamma_val, OCI_manual=oci_val)
         irr_array = res[1] 
-        
-        # Calculate electrical power (W) for one panel based on case 5 irradiance and  dynamic temperature
+    
+        # returns Watts
         _, p_single_panel_watts, _ = simulate_case_5(irr_array, T_a_day, T_cell_initial=T_a_day[0])
-        
-        # 3. Summation: (Watts * number_of_panels) / 1000 = kW
-        # For scale 4x, this should be (p_single * 960 * 4) total
         num_panels_in_block = 960 * multiplier
+        # (Watts * Number) / 1000 = kiloWatts
         total_kw_array += (p_single_panel_watts * num_panels_in_block) / 1000.0
 
     return total_kw_array
 
-def run_case_6_simulation(N, oci_val, panel_scale, battery_packs, pv_precalc=None):
+def run_case_6_simulation(N, oci_val, panel_scale, battery_packs, pv_precalc=None, start_soc=None):
     t_5min = np.linspace(0, 24, 288)
-    capacity_kwh = battery_packs * 210 # pack_capacity
+    capacity_kwh = battery_packs * 210 
+    
+    if start_soc is None:
+        current_soc = 0.5 * capacity_kwh
+    else:
+        current_soc = start_soc
     
     if pv_precalc is not None:
-        pv_total_kw = pv_precalc  # Use the fast pre-calculated data instead of running thousands of times
+        pv_total_kw = pv_precalc
     else:
         pv_total_kw = get_scaled_pv_power(N, t_5min, panel_scale, oci_val)
-    # ---------------------
 
     soc_history, grid_buy, grid_sell, load_history = [], [], [], []
-    current_soc = 0.5 * capacity_kwh
     current_date = datetime(2026, 1, 1) + timedelta(days=int(N-1))
 
     for i, t_local in enumerate(t_5min):
         t_corrected = apply_dst(t_local, current_date)
         load_kw = load_model(t_corrected, current_date)
         
+        # Battery step updates current_soc based on surplus/deficit
         new_soc, g_in, g_out = battery_step(pv_total_kw[i], load_kw, current_soc, capacity_kwh)
         
         soc_history.append(current_soc)
@@ -1211,10 +1194,16 @@ def run_case_6_simulation(N, oci_val, panel_scale, battery_packs, pv_precalc=Non
         current_soc = new_soc
 
     return {
-        "time": t_5min, "pv_kw": pv_total_kw, "load_kw": np.array(load_history),
-        "soc_kwh": np.array(soc_history), "grid_buy_kw": np.array(grid_buy),
-        "grid_sell_kw": np.array(grid_sell)
+        "time": t_5min, 
+        "pv_kw": pv_total_kw, 
+        "load_kw": np.array(load_history),
+        "soc_kwh": np.array(soc_history), 
+        "grid_buy_kw": np.array(grid_buy),
+        "grid_sell_kw": np.array(grid_sell),
+        "final_soc": current_soc  # allows the loop to "remember" the battery level
     }
+
+
 # Economic Model - annual cost from 10 year cost
 def compute_annual_total_cost(results, buy_price, sell_price, battery_packs):
     # Sum the 5-min steps and convert to kWh
@@ -1236,11 +1225,7 @@ def compute_annual_total_cost(results, buy_price, sell_price, battery_packs):
 
 #Plotting functions for Case 6
 def plot_case_6_performance(N, oci_val, panel_scale, battery_packs, actual_pv_kw, actual_load_kw):
-    """
-    Plots PV, Load, Grid Purchase, and Battery SOC for a specific day.
-    Includes scatter points for actual eGauge data.
-    """
-    # 1. Run Simulation
+
     res = run_case_6_simulation(N, oci_val, panel_scale, battery_packs)
     
     fig, ax1 = plt.subplots(figsize=(12, 6))
@@ -1254,7 +1239,7 @@ def plot_case_6_performance(N, oci_val, panel_scale, battery_packs, actual_pv_kw
     # Scatter actual data
     t_actual = np.linspace(0, 24, len(actual_pv_kw))
     ax1.scatter(t_actual, actual_pv_kw, color='darkgreen', s=15, alpha=0.6, label='Actual PV (eGauge)')
-    ax1.scatter(t_actual, actual_load_kw, color='darkred', s=15, alpha=0.6, label='Actual Load (eGauge)')
+    ax1.scatter(t_actual, actual_load_kw, color='darkred', s=15, alpha=0.6, label='Actual Load (eGauge)') #not sure if this is different?
     
     # --- Right Axis: Battery Energy (kWh) ---
     ax2.fill_between(res["time"], 0, res["soc_kwh"], color='orange', alpha=0.15, label='Battery Energy (kWh)')
@@ -1280,36 +1265,44 @@ def plot_case_6_performance(N, oci_val, panel_scale, battery_packs, actual_pv_kw
 def plot_case_6_economics(panel_scale, annual_actual_energy, monthly_max):
     buy_prices = np.linspace(0.06, 0.18, 7)
     pack_options = [0, 6, 12]
-    sell_back_options = [0.00, 0.04] 
+    sell_back_ratios = [0, 0.5, 1] 
     t_5min = np.linspace(0, 24, 288)
     
-    # 1. Pre-calculate the entire year of PV (Takes ~10-15 seconds)
+    # Pre-calculate the entire year of PV
     print(f"Pre-calculating solar for {panel_scale}x expansion...")
     yearly_pv = []
+
     for N in range(1, 366):
         daily_oci = oci(monthly_max, N, annual_actual_energy)
         yearly_pv.append(get_scaled_pv_power(N, t_5min, panel_scale, daily_oci))
-    
+
     for packs in pack_options:
-        print(f"Simulating {packs} packs...")
-        for sell_p in sell_back_options:
+        for ratio in sell_back_ratios:
             annual_costs = []
             for buy_p in buy_prices:
+                sell_p = buy_p * ratio
                 total_annual_spend = 0
+                
+                # Start Jan 1st at 50% capacity
+                current_battery_level = 0.5 * (packs * 210) 
+                
                 for N in range(1, 366):
-                    # Pass the pre-calculated PV to skip the physics
-                    res = run_case_6_simulation(N, None, panel_scale, packs, pv_precalc=yearly_pv[N-1])
+                    # Pass the current_battery_level into the sim
+                    res = run_case_6_simulation(N, None, panel_scale, packs, pv_precalc=yearly_pv[N-1], start_soc=current_battery_level)
+                    
+                    # UPDATE current_battery_level with the sim's final_soc for the next day
+                    current_battery_level = res["final_soc"]
                     
                     import_kwh = np.sum(res["grid_buy_kw"]) * (5/60)
                     export_kwh = np.sum(res["grid_sell_kw"]) * (5/60)
                     total_annual_spend += (import_kwh * buy_p) - (export_kwh * sell_p)
                 
-                # 10-year annualized math
-                cap_kwh = packs * 210
-                inv = cap_kwh * 115
-                annual_costs.append(((total_annual_spend * 10) + inv + (0.05 * inv * 10)) / 10)
+                # 10-year math
+                inv = (packs * 210) * 115
+                maint = 0.05 * inv * 10
+                annual_costs.append(((total_annual_spend * 10) + inv + maint) / 10)
             
-            plt.plot(buy_prices, annual_costs, marker='o', label=f"{packs} Packs, ${sell_p} Sell")
+            plt.plot(buy_prices, annual_costs, marker='o', label=f"{packs} Pks, {ratio}x Sell")
     
     plt.xlabel('Austin Energy Purchase Price ($/kWh)')
     plt.ylabel('Average Total Yearly Cost ($)')
