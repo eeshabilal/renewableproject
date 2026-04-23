@@ -362,9 +362,9 @@ def main():
 
     if show_case_6:
         # Performance Plots (Feb 5)
-        # Clear Day (OCI=10) for 1x, 4x, 6x
+        # Clear Day (OCI=0) for 1x, 4x, 6x
         for scale in [1, 4, 6]:
-            plot_case_6_performance(36, None, scale, 6, cleaned_feb_data, feb_load_data) # need to check OCI, it only worked when I put in None?
+            plot_case_6_performance(36, 0, scale, 6, cleaned_feb_data, feb_load_data) # need to check OCI, it only worked when I put in None?
 
         # Cloudy Day (OCI=5) for 4x, 6x
         for scale in [4, 6]:
@@ -848,7 +848,8 @@ def oci(monthly_max, N, annual_energy_array):
     month_of_n = next(month for month, day_range in months_2019.items() if N in day_range)
     # calc OCI
     max_E = monthly_max[month_of_n]
-    OCI = 10 - (E-0.05*max_E)/(max_E-0.05*max_E)
+    OCI = 10 * (1 - (E - 0.05*max_E) / (max_E - 0.05*max_E)) # we want to get OCI values between 0-10
+    #OCI = 10 - (E-0.05*max_E)/(max_E-0.05*max_E)
 
     return OCI
 
