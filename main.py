@@ -12,13 +12,13 @@ def main():
     # <editor-fold desc="Control Panel">
     """"""""""""""""""""""""""" Control Panel """""""""""""""""""""""""""""
     # For when you're testing stuff and everyone else's work is slowing you down
-    show_case_1 = 0
-    show_case_2 = 0
-    show_case_3 = 0
-    show_case_4 = 0
-    show_case_5 = 0
+    show_case_1 = 1
+    show_case_2 = 1
+    show_case_3 = 1
+    show_case_4 = 1
+    show_case_5 = 1
     show_case_6 = 1
-    show_annual_calc = 0
+    show_annual_calc = 1
 
     # Relevant days and times
     # Feb 5, N = 36
@@ -285,7 +285,7 @@ def main():
             axis1.set_xlabel('Time of Day (hours)', fontweight='bold')
             axis1.set_ylabel('Total System Power Delivery (kW)', color='blue', fontweight='bold')
             axis2.set_ylabel('Irradiance (kW/m^2)', color='orange', fontweight='bold')
-            plt.title(f"Case 4Irradiance and System Power: {label}", fontweight='bold')
+            plt.title(f"Case 4 Irradiance and System Power: {label}", fontweight='bold')
             axis1.grid(True, alpha=0.6)
 
             lines1, labels1 = axis1.get_legend_handles_labels()
@@ -322,20 +322,26 @@ def main():
 
         # Loop through all 365 days of the year (Day 1 through Day 365)
         i = 0
+        case1_panel_temp_total_system_energy = np.zeros(365)
         case1_total_system_energy = np.zeros(365)
         case_4_daily_mwh = []
+        case5_total_system_energy = np.zeros(365)
         pec_actual_kwh = get_annual_daily_energy_array('PEC 15 minute data for 2019.csv')
         for N in range(1, 366):
-            case1_energy = simulate(N, t_5min, beta, gamma)[0]
-            case1_total_system_energy[i] = np.trapezoid(case1_energy, t_5min)
+
 
             daily_oci = oci(monthly_max, N, annual_actual_energy)
-            I_array = simulate(N, t_5min, beta, gamma, OCI_manual=daily_oci)[1]
             T_a_day = temps_array[(N - 1) * 288: N * 288]
-            T_cell_array, P_elec_array, T_cell_next = simulate_case_5(I_array, T_a_day, T_cell_initial)
-            daily_energy_mwh = sum(P_elec_array) * (5 / 60) / 1e3
-            case_5_daily_mwh.append(daily_energy_mwh)
-            T_cell_initial = T_cell_next
+            I_array = simulate(N, t_5min, beta, gamma, OCI_manual=daily_oci)[1]
+            T_cell_array,_,_ = simulate_case_5(I_array, T_a_day, T_cell_initial)
+
+            case5_energy = simulate(N, t_5min, beta, gamma, T_cell=T_cell_array, OCI_manual=daily_oci)[0]
+            case5_total_system_energy[i] = np.trapezoid(case5_energy, t_5min)
+            case1_panel_temp_energy = simulate(N, t_5min, beta, gamma, T_cell=T_cell_array)[0]
+
+            case1_panel_temp_total_system_energy[i] = np.trapezoid(case1_panel_temp_energy, t_5min)
+            case1_energy =  simulate(N, t_5min, beta, gamma)[0]
+            case1_total_system_energy[i] = np.trapezoid(case1_energy, t_5min)
 
             # ripped from case 4 so that I don't have to turn show_case_4 on
             power_cloudy = \
@@ -420,20 +426,16 @@ def main():
 
         # Total daily energy production (MWh) vs. Day of year starting from Jan 1
         case_1_daily_mwh = case1_total_system_energy / 1e3
-        case_2_daily_mwh_45c = case_1_daily_mwh * .91
-        case_2_daily_mwh_85c = case_1_daily_mwh * .73
-        case_2_daily_mwh_0c = case_1_daily_mwh * 1.1125
+        case1_panel_temp_total_system_energy = case1_panel_temp_total_system_energy / 1e3
         case_4_daily_mwh = np.array(case_4_daily_mwh)
-        case_5_daily_mwh = np.array(case_5_daily_mwh)
+        case_5_daily_mwh = case5_total_system_energy / 1e3
         pec_actual_mwh = np.array(pec_actual_kwh) / 1e3
 
         plt.plot(days_in_year, case_1_daily_mwh, label='Case 1')
-        plt.plot(days_in_year, case_2_daily_mwh_0c, label='Case 2 0C')
-        plt.plot(days_in_year, case_2_daily_mwh_45c, label='Case 2 45C')
-        plt.plot(days_in_year, case_2_daily_mwh_85c, label='Case 2 85C')
+        plt.plot(days_in_year, case1_panel_temp_total_system_energy, label='Case 1 Plus Panel Temp Model')
         plt.plot(days_in_year, case_4_daily_mwh, label='Case 4')
         plt.plot(days_in_year, case_5_daily_mwh, label='Case 5')
-        plt.plot(days_in_year, pec_actual_mwh, label='PEC')
+        plt.plot(days_in_year, pec_actual_mwh, label='PEC 2019')
         plt.xlabel('Day of the Year')
         plt.xticks(np.arange(0, 366, 30))
         plt.ylabel('Energy Production (MWh)')
@@ -477,6 +479,7 @@ def simulate(N, t, beta, gamma, T_cell=25, annual_energy_array=None, monthly_max
     panel_eff = .157  # efficiency at 25C cell temperature
     inverter_eff = .965
     power_temp_coeff = -0.0045  # Power temperature coefficient from 25C
+    derating_factor = .93 * .9 * .94 * .89
     A = 1.64 * .99  # m^2
     I_0 = extraterrestrial_radiation(N)  # W/m^2
     delta = solar_declination_angle(N)  # deg
@@ -526,7 +529,10 @@ def simulate(N, t, beta, gamma, T_cell=25, annual_energy_array=None, monthly_max
                     I[i] = I_cd[i] + I_cb[i]
 
                 P_25C = I[i] * panel_eff * A * inverter_eff  # Power at 25C cell temperature
-                Wdot_elec[i] = P_25C * (1 + power_temp_coeff * (T_cell - 25))  # Adjusted for cell temperature
+                if type(T_cell) == int:
+                    Wdot_elec[i] = P_25C * (1 + power_temp_coeff * (T_cell - 25))  # Adjusted for cell temperature
+                else:
+                    Wdot_elec[i] = P_25C * (1 + power_temp_coeff * (T_cell[i] - 25))  # Adjusted for cell temperature
                 bd_ratio[i] = I_cb[i] / I_cd[i]
                 if bd_ratio[i] > 10:  # Correct for huge spike
                     bd_ratio[i] = bd_ratio[i - 1]
@@ -541,7 +547,7 @@ def simulate(N, t, beta, gamma, T_cell=25, annual_energy_array=None, monthly_max
 
         i += 1
 
-    return Wdot_elec, I, bd_ratio, theta_i
+    return Wdot_elec * derating_factor, I, bd_ratio, theta_i
 
 
 def solar_time(N, standard_time):
