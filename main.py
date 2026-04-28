@@ -12,13 +12,13 @@ def main():
     # <editor-fold desc="Control Panel">
     """"""""""""""""""""""""""" Control Panel """""""""""""""""""""""""""""
     # For when you're testing stuff and everyone else's work is slowing you down
-    show_case_1 = 1
-    show_case_2 = 1
-    show_case_3 = 1
-    show_case_4 = 1
+    show_case_1 = 0
+    show_case_2 = 0
+    show_case_3 = 0
+    show_case_4 = 0
     show_case_5 = 1
-    show_case_6 = 1
-    show_annual_calc = 1
+    show_case_6 = 0
+    show_annual_calc = 0
 
     # Relevant days and times
     # Feb 5, N = 36
@@ -348,11 +348,6 @@ def main():
             simulate(N, t_5min, beta, gamma, annual_energy_array=annual_actual_energy, monthly_max=monthly_max)[0]
             energy_cloudy = np.trapezoid(power_cloudy * 960, t_5min) / 1e6
 
-            # p_cloudy = \
-            #     simulate(day, t_5min, beta, gamma, annual_energy_array=annual_actual_energy, monthly_max=monthly_max)[0]
-            # e_cloudy = np.trapezoid(p_cloudy * 960, t_5min) / 1e6
-            # daily_mwh_cloudy.append(e_cloudy)
-
             case_4_daily_mwh.append(energy_cloudy)
 
             i += 1
@@ -362,7 +357,8 @@ def main():
 
         # Jun 21 Panel Temp vs Time of Day sunny and cloudy plots
         plt.plot(t_5min, jun21_clear_temps, label='Clear')
-        plt.plot(t_5min, jun21_cloudy_temps, label='Cloudy', linestyle='--')
+        plt.plot(t_5min, jun21_cloudy_temps, label='Cloudy')
+        plt.plot(t_5min, temps_array[49248:49536], label='Ambient')
         plt.xlabel('Time of Day (hours)')
         plt.xticks(np.arange(0, 25, 4))
         plt.ylabel('Temperature (C)')
@@ -372,21 +368,11 @@ def main():
         plt.tight_layout()
         plt.show()
 
-        # Jun 21 Ambient temp vs time of day
-        plt.plot(t_5min, temps_array[49248:49536])
-        plt.xlabel('Time of Day (hours)')
-        plt.xticks(np.arange(0, 25, 4))
-        plt.ylabel('Temperature (C)')
-        plt.title('Ambient Temperature vs. Time of Day (June 21)')
-        plt.grid(True, alpha=0.6)
-        plt.tight_layout()
-        plt.show()
-
         # Jun 21 Irradiance and total system power delivery vs Time of Day sunny, cloudy, and cloud model plots
         fig, ax1 = plt.subplots()
 
-        ax1.plot(t_5min, jun21_clear_power / 1e3, label='Clear Power Output', color='b')
-        ax1.plot(t_5min, jun21_real_power / 1e3, label='Cloud Model Power Output', color='g')
+        ax1.plot(t_5min, jun21_clear_power, label='Clear Power Output', color='b')
+        ax1.plot(t_5min, jun21_real_power, label='Cloud Model Power Output', color='g')
         ax1.set_xlabel('Time of Day (hours)')
         ax1.set_xticks(np.arange(0, 25, 4))
         ax1.set_ylabel('Power Output (kW)')
@@ -407,7 +393,7 @@ def main():
         # Dec 21 Irradiance and total system power delivery vs Time of day cloudy
         fig, ax1 = plt.subplots()
 
-        ax1.plot(t_5min, dec21_cloudy_power / 1e3, label='Power Output')
+        ax1.plot(t_5min, dec21_cloudy_power, label='Power Output')
         ax1.set_xlabel('Time of Day (hours)')
         ax1.set_xticks(np.arange(0, 25, 4))
         ax1.set_ylabel('Power Output (kW)')
@@ -479,8 +465,8 @@ def simulate(N, t, beta, gamma, T_cell=25, annual_energy_array=None, monthly_max
     panel_eff = .157  # efficiency at 25C cell temperature
     inverter_eff = .965
     power_temp_coeff = -0.0045  # Power temperature coefficient from 25C
-    derating_factor = .93 * .9 * .94 * .89
     A = 1.64 * .99  # m^2
+    derating_factor = .93 * .9 * .94 * .89
     I_0 = extraterrestrial_radiation(N)  # W/m^2
     delta = solar_declination_angle(N)  # deg
     array_size = np.size(t)
@@ -618,10 +604,10 @@ def angle_of_incidence(alpha, beta, gamma, gamma_s):  # theta_i
 
 def beam_transmissivity(N, theta_z, A):  # tau_b
     # theta_z = math.radians(theta_z) # Uncomment this when testing hand calcs with degrees.
-    if (N >= 355) or (N <= 172):  # Winter range
-        r0, r1, rk = 1.03, 1.01, 1.00
-    elif 172 <= N <= 355:  # Summer range
+    if 79 <= N <= 265:  # Summer range
         r0, r1, rk = 0.97, 0.99, 1.02
+    else:  # Winter range
+        r0, r1, rk = 1.03, 1.01, 1.00
 
     a0_star = 0.4237 - 0.008216 * (6 - A) ** 2
     a1_star = 0.5055 + 0.00595 * (6.5 - A) ** 2
@@ -1145,7 +1131,7 @@ def simulate_case_5(I_array, T_a_array, T_cell_initial=25.0):
     alpha = 0.94  # Panel absorptivity [1]
     eta_ref = 0.157  # Rated module efficiency (15.7%) [1]
     temp_coeff = 0.0045  # Power temp coefficient (-0.45%/C -> 0.0045) [1]
-
+    derating_factor = .93 * .9 * .94 * .89
     # --- NOCT Conditions to calculate U_L ---
     NOCT = 45.0  # Nominal Operating Cell Temp in C [1]
     I_NOCT = 800.0  # Standard irradiance for NOCT in W/m^2 [1, 2]
@@ -1170,7 +1156,7 @@ def simulate_case_5(I_array, T_a_array, T_cell_initial=25.0):
         eta = eta_ref * (1 - temp_coeff * (T_cell - 25.0))
 
         # Calculate Electrical Power (Watts)
-        P_elec = I * A * eta
+        P_elec = I * A * eta * derating_factor
 
         # Calculate heat transfer rates (Watts)
         Q_in = I * A * tau * alpha
