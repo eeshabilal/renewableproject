@@ -1407,7 +1407,7 @@ def plot_case_6_performance(N, oci_val, panel_scale, battery_packs, actual_pv_kw
     ax1.plot(res["time"], res["pv_kw"], 'g-', linewidth=2, label='Model PV Power (kW)')
     ax1.plot(res["time"], res["load_kw"], 'r--', linewidth=2, label='Model Load (kW)')
     ax1.plot(res["time"], res["grid_buy_kw"], 'b:', linewidth=1.5, label='Grid Purchase (kW)')
-    #ax1.plot(res["time"], -res["grid_sell_kw"], 'm-.', linewidth=1.5, label='Grid Export (kW)')
+    ax1.plot(res["time"], -res["grid_sell_kw"], 'm-.', linewidth=1.5, label='Grid Export (kW)')
 
     # Scatter actual data
     t_actual = np.linspace(0, 24, len(actual_pv_kw))
