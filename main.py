@@ -1342,7 +1342,7 @@ def get_scaled_pv_power(N, t_array, panel_scale, oci_val):
     return total_kw_array
 
 
-def run_case_6_simulation(N, oci_val, panel_scale, battery_packs, pv_precalc=None):
+def run_case_6_simulation(N, oci_val, panel_scale, battery_packs, pv_precalc=None, start_soc=0):
     t_5min = np.linspace(0, 24, 288)
     capacity_kwh = battery_packs * 210  # pack_capacity
 
@@ -1353,7 +1353,7 @@ def run_case_6_simulation(N, oci_val, panel_scale, battery_packs, pv_precalc=Non
     # ---------------------
 
     soc_history, grid_buy, grid_sell, load_history = [], [], [], []
-    current_soc = 0 # start with empty battery
+    current_soc = start_soc# start with empty battery
     current_date = datetime(2026, 1, 1) + timedelta(days=int(N - 1))
 
     for i, t_local in enumerate(t_5min):
@@ -1371,6 +1371,7 @@ def run_case_6_simulation(N, oci_val, panel_scale, battery_packs, pv_precalc=Non
     return {
         "time": t_5min, "pv_kw": pv_total_kw, "load_kw": np.array(load_history),
         "soc_kwh": np.array(soc_history), "grid_buy_kw": np.array(grid_buy),
+        "final_soc": current_soc,
         "grid_sell_kw": np.array(grid_sell)
     }
 
@@ -1406,7 +1407,7 @@ def plot_case_6_performance(N, oci_val, panel_scale, battery_packs, actual_pv_kw
     ax1.plot(res["time"], res["pv_kw"], 'g-', linewidth=2, label='Model PV Power (kW)')
     ax1.plot(res["time"], res["load_kw"], 'r--', linewidth=2, label='Model Load (kW)')
     ax1.plot(res["time"], res["grid_buy_kw"], 'b:', linewidth=1.5, label='Grid Purchase (kW)')
-    ax1.plot(res["time"], -res["grid_sell_kw"], 'm-.', linewidth=1.5, label='Grid Export (kW)')
+    #ax1.plot(res["time"], -res["grid_sell_kw"], 'm-.', linewidth=1.5, label='Grid Export (kW)')
 
     # Scatter actual data
     t_actual = np.linspace(0, 24, len(actual_pv_kw))
@@ -1455,12 +1456,13 @@ def plot_case_6_economics(panel_scale, annual_actual_energy, monthly_max):
             for buy_p in buy_prices:
                 sell_p=buy_p * ratio
                 total_annual_spend = 0
+                running_soc = 0  # start with empty battery each year
                 for N in range(1, 366):
-                    res = run_case_6_simulation(N, None, panel_scale, packs, pv_precalc=yearly_pv[N - 1])
-
-                    import_kwh = np.sum(res["grid_buy_kw"]) * (5 / 60)
-                    export_kwh = np.sum(res["grid_sell_kw"]) * (5 / 60)
+                    res = run_case_6_simulation(N, None, panel_scale, packs, pv_precalc=yearly_pv[N - 1], start_soc=running_soc)
+                    import_kwh = np.sum(res["grid_buy_kw"]) * DT
+                    export_kwh = np.sum(res["grid_sell_kw"]) * DT
                     total_annual_spend += (import_kwh * buy_p) - (export_kwh * sell_p)
+                    running_soc = res["final_soc"]
 
                 # 10-year math
                 inv = (packs * 210) * 115
