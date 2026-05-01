@@ -16,9 +16,9 @@ def main():
     show_case_2 = 0
     show_case_3 = 0
     show_case_4 = 0
-    show_case_5 = 1
-    show_case_6 = 0
-    show_annual_calc = 0
+    show_case_5 = 0
+    show_case_6 = 1
+    show_annual_calc = 1
 
     # Relevant days and times
     # Feb 5, N = 36
@@ -51,7 +51,6 @@ def main():
     DT = 5 / 60  # 5-minute timestep in hours
 
     battery_packs_list = [0, 6, 12]
-    buy_back_prices = [0.00, 0.04]
     austin_energy_prices = np.linspace(0.06, 0.18, 7)
     feb_5_idx = 36
 
@@ -122,6 +121,7 @@ def main():
         energy_case1_annual = 0
         energy_case3_annual = 0
         energy_cloudy_annual = 0
+        daily_mwh_case1 = []
         daily_mwh_case3 = []
         daily_mwh_cloudy = []
         for day in days_in_year:
@@ -129,6 +129,7 @@ def main():
             p1 = simulate(day, t_5min, beta, gamma)[0]
             e1 = np.trapezoid(p1 * 960, t_5min) / 1e6  # MWh for 960 panels
             energy_case1_annual += e1
+            daily_mwh_case1.append(e1)
 
             # Case 3 Daily Energy
             p3, irr3, beta3 = simulate_case_3(day, t_5min, gamma)
@@ -215,12 +216,14 @@ def main():
     if show_case_3:
         # Irradiance and total system power delivery - December 21
         power_dec, irr_dec, beta_dec = simulate_case_3(355, t_5min, gamma)
-        plot_solar_data(t_5min, power_dec, cleaned_2019_data[355], irr_dec,
+        power_dec_no_tracking, irr_dec_no_tracking, _, _ = simulate(355, t_5min, beta, gamma)
+        plot_solar_data(t_5min, power_dec, cleaned_2019_data[355], irr_dec, power_dec_no_tracking, irr_dec_no_tracking,
                         'December 21 - Case 3 Optimized Vertical Tracking')
 
         # Irradiance and total system power delivery - June 21
         power_jun, irr_jun, beta_jun = simulate_case_3(172, t_5min, gamma)
-        plot_solar_data(t_5min, power_jun, cleaned_2019_data[172], irr_jun,
+        power_jun_no_tracking, irr_jun_no_tracking, _, _ = simulate(172, t_5min, beta, gamma)
+        plot_solar_data(t_5min, power_jun, cleaned_2019_data[172], irr_jun, power_jun_no_tracking, irr_jun_no_tracking,
                         'June 21 - Case 3 Optimized Vertical Tracking')
 
         # Plot Tilt Angle vs time of day - June 21
@@ -233,7 +236,7 @@ def main():
         plt.show()
 
         # Plot total daily energy production vs day of the year
-        plot_energy(days_in_year, daily_mwh_case3, annual_actual_energy / 1000,
+        plot_energy(days_in_year, daily_mwh_case3, annual_actual_energy / 1000,daily_mwh_case1,
                     title='Daily Energy Production vs. Day of the Year for Case 3')
     # </editor-fold>
 
@@ -650,18 +653,31 @@ def beam_radiation(I_0, tau_b, theta_i):
     return I_0 * tau_b * math.cos(theta_i)
 
 
-def plot_solar_data(t, power_array, real_power_array, irradiance_array, day_name):
-    # Plots Total System Power and Irradiance on a dual y-axis vs time of day
+def plot_solar_data(t, power_array, real_power_array, irradiance_array, comparison_power=None, comparison_irr=None, day_name=None):
+
     t_15min = np.linspace(0, 24, 96)
-    fig, ax1 = plt.subplots(figsize=(10, 6))
+    fig, ax1 = plt.subplots(figsize=(14, 8))
 
     # Left Axis: Total System Power (kW)
     color_power = 'tab:blue'
-    ax1.set_xlabel('Time (hours)')
-    ax1.set_ylabel('Total System Power Delivery (kW)', color=color_power, fontweight='bold')
-    ax1.plot(t, power_array * 960 / 1000, color=color_power, label='Total Power Output', linewidth=2)
-    if real_power_array.any():
-        ax1.plot(t_15min, real_power_array, color=color_power, linestyle=':', label='2019 Power Output', linewidth=2)
+    ax1.set_xlabel('Time (hours)',fontsize=14, fontweight='bold')
+    ax1.set_ylabel('Total System Power Delivery (kW)', color=color_power, fontsize=14, fontweight='bold')
+
+    # Case 3 (tracking)
+    ax1.plot(t, power_array * 960 / 1000,
+             color=color_power, label='Tracking Power Output', linewidth=2)
+
+    if comparison_power is not None:
+        ax1.plot(t, comparison_power * 960 / 1000,
+                 color='tab:green', linestyle='--',
+                 label='No Tracking Power Output', linewidth=2)
+
+    # Real data
+    if real_power_array is not None and real_power_array.any():
+        ax1.plot(t_15min, real_power_array,
+                 color=color_power, linestyle=':',
+                 label='2019 Power Output', linewidth=2)
+
     ax1.tick_params(axis='y', labelcolor=color_power)
     ax1.set_xticks(np.arange(0, 25, 1))
     ax1.grid(True, alpha=0.6)
@@ -669,17 +685,27 @@ def plot_solar_data(t, power_array, real_power_array, irradiance_array, day_name
     # Right Axis: Irradiance (kW/m2)
     ax2 = ax1.twinx()
     color_irr = 'tab:orange'
-    ax2.set_ylabel('Irradiance (kW/m^2)', color=color_irr, fontweight='bold')
-    ax2.plot(t, irradiance_array / 1000, color=color_irr, label='Irradiance', linestyle='--', linewidth=2)
+    ax2.set_ylabel('Irradiance (kW/m^2)', color=color_irr, fontsize=14, fontweight='bold')
+
+    # Case 3 irradiance
+    ax2.plot(t, irradiance_array / 1000,
+             color=color_irr, linestyle='--',
+             label='Tracking Irradiance', linewidth=2)
+
+    if comparison_irr is not None:
+        ax2.plot(t, comparison_irr / 1000,
+                 color='tab:red', linestyle=':',
+                 label='No Tracking Irradiance', linewidth=2)
+
     ax2.tick_params(axis='y', labelcolor=color_irr)
 
-    # Legends and Title
-    plt.title(f'Power & Irradiance vs. Time ({day_name})')
+    # Title and legend
+    plt.title(f'Power & Irradiance vs. Time ({day_name})', fontsize=16, fontweight='bold')
     lines1, labels1 = ax1.get_legend_handles_labels()
     lines2, labels2 = ax2.get_legend_handles_labels()
-    ax1.legend(lines1 + lines2, labels1 + labels2)
-    fig.tight_layout()
+    ax1.legend(lines1 + lines2, labels1 + labels2, fontsize=12, loc='upper left')
 
+    fig.tight_layout()
     plt.show()
 
 
@@ -721,10 +747,12 @@ def plot_theta_i(N, theta_i_noon):
     plt.show()
 
 
-def plot_energy(N, energy, actual_energy, title='Daily Energy Production vs. Day of the Year'):
+def plot_energy(N, energy, actual_energy, no_tracking_energy = None, title='Daily Energy Production vs. Day of the Year'):
     plt.figure(figsize=(10, 6))
     plt.plot(N, energy, color='c', linewidth=2, label='Daily Energy Production')
     plt.plot(N, actual_energy, color='b', linewidth=2, label='2019 Energy Production')
+    if no_tracking_energy is not None:
+        plt.plot(N, no_tracking_energy, color='orange', linewidth=2, label='No Tracking Energy Production')
     plt.xlabel('Day', fontweight='bold')
     plt.ylabel('Energy Production (MWh)', fontweight='bold')
     plt.title(title)
@@ -1325,7 +1353,7 @@ def run_case_6_simulation(N, oci_val, panel_scale, battery_packs, pv_precalc=Non
     # ---------------------
 
     soc_history, grid_buy, grid_sell, load_history = [], [], [], []
-    current_soc = 0.5 * capacity_kwh
+    current_soc = 0 # start with empty battery
     current_date = datetime(2026, 1, 1) + timedelta(days=int(N - 1))
 
     for i, t_local in enumerate(t_5min):
@@ -1378,6 +1406,7 @@ def plot_case_6_performance(N, oci_val, panel_scale, battery_packs, actual_pv_kw
     ax1.plot(res["time"], res["pv_kw"], 'g-', linewidth=2, label='Model PV Power (kW)')
     ax1.plot(res["time"], res["load_kw"], 'r--', linewidth=2, label='Model Load (kW)')
     ax1.plot(res["time"], res["grid_buy_kw"], 'b:', linewidth=1.5, label='Grid Purchase (kW)')
+    ax1.plot(res["time"], -res["grid_sell_kw"], 'm-.', linewidth=1.5, label='Grid Export (kW)')
 
     # Scatter actual data
     t_actual = np.linspace(0, 24, len(actual_pv_kw))
@@ -1385,7 +1414,8 @@ def plot_case_6_performance(N, oci_val, panel_scale, battery_packs, actual_pv_kw
     ax1.scatter(t_actual, actual_load_kw, color='darkred', s=15, alpha=0.6, label='Actual Load (eGauge)')
 
     # --- Right Axis: Battery Energy (kWh) ---
-    ax2.fill_between(res["time"], 0, res["soc_kwh"], color='orange', alpha=0.15, label='Battery Energy (kWh)')
+    #ax2.fill_between(res["time"], 0, res["soc_kwh"], color='orange', alpha=0.15, label='Battery Energy (kWh)')
+    ax2.plot(res["time"], res["soc_kwh"], color='orange', linewidth=2, label='Battery SOC (kWh)')
     ax2.set_ylabel('Battery Energy (kWh)', color='orange', fontsize=12, fontweight='bold')
     ax2.tick_params(axis='y', labelcolor='orange')
     ax2.set_ylim(0, battery_packs * pack_capacity * 1.1)
@@ -1409,7 +1439,7 @@ def plot_case_6_performance(N, oci_val, panel_scale, battery_packs, actual_pv_kw
 def plot_case_6_economics(panel_scale, annual_actual_energy, monthly_max):
     buy_prices = np.linspace(0.06, 0.18, 7)
     pack_options = [0, 6, 12]
-    sell_back_ratio = [0, 0.5,1.0]
+    sell_back_ratio = [0.5,1.0]
     t_5min = np.linspace(0, 24, 288)
 
     # Pre-calculate year of solar to reduce processing time
