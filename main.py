@@ -13,11 +13,11 @@ def main():
     """"""""""""""""""""""""""" Control Panel """""""""""""""""""""""""""""
     # For when you're testing stuff and everyone else's work is slowing you down
     show_case_1 = 0
-    show_case_2 = 1
+    show_case_2 = 0
     show_case_3 = 0
-    show_case_4 = 0
+    show_case_4 = 1
     show_case_5 = 0
-    show_case_6 = 0
+    show_case_6 = 1
     show_annual_calc = 1
 
     # Relevant days and times
@@ -293,52 +293,54 @@ def main():
             axis2 = axis1.twinx()
 
             day = data["day"]
+
             # Get the actual calculated OCI for this day
             actual_oci = oci(monthly_max, day, annual_actual_energy)
             print(f"{label}: OCI = {actual_oci:.2f}")
 
-        # December: plot both OCI=10 and actual OCI
-        # June (and others): plot only actual OCI
-        if day == 355:
-            sims_to_plot = [
-                {"oci_val": 10,         "label": "OCI = 10 (Manual)"},
-                {"oci_val": actual_oci, "label": f"OCI = {actual_oci:.2f} (Calculated)"},
-            ]
-        else:
-            sims_to_plot = [
-                {"oci_val": actual_oci, "label": f"OCI = {actual_oci:.2f} (Calculated)"},
-            ]
+            # December: plot both OCI=10 and actual OCI
+            # June (and others): plot only actual OCI
+            if day == 355:
+                sims_to_plot = [
+                    {"oci_val": 10,         "label": "OCI = 10 (Manual)"},
+                    {"oci_val": actual_oci, "label": f"OCI = {actual_oci:.2f} (Calculated)"},
+                ]
+            else:
+                sims_to_plot = [
+                    {"oci_val": actual_oci, "label": f"OCI = {actual_oci:.2f} (Calculated)"},
+                ]
 
-        for sim in sims_to_plot:
-            power_cloudy, _, _, _ = simulate(day, t_5min, beta, gamma,
+            for sim in sims_to_plot:
+                power_cloudy, _, _, _ = simulate(day, t_5min, beta, gamma,
+                                                annual_energy_array=annual_actual_energy,
+                                                monthly_max=monthly_max,
+                                                OCI_manual=sim["oci_val"])
+                _, irr_cloudy, _, _ = simulate(day, t_5min, beta=0, gamma=gamma,
                                             annual_energy_array=annual_actual_energy,
                                             monthly_max=monthly_max,
                                             OCI_manual=sim["oci_val"])
-            _, irr_cloudy, _, _ = simulate(day, t_5min, beta=0, gamma=gamma,
-                                        annual_energy_array=annual_actual_energy,
-                                        monthly_max=monthly_max,
-                                        OCI_manual=sim["oci_val"])
-            axis1.plot(t_5min, power_cloudy * 960 / 1000, label=f'Cloudy Power ({sim["label"]})')
-            axis2.plot(t_5min, irr_cloudy / 1000, linestyle='--', label=f'Cloudy Irradiance ({sim["label"]})')
+                                            
+                axis1.plot(t_5min, power_cloudy * 960 / 1000, label=f'Cloudy Power ({sim["label"]})', color='green')
+                axis2.plot(t_5min, irr_cloudy / 1000, linestyle='--', label=f'Cloudy Irradiance ({sim["label"]})', color='gold')
 
-        # Clear sky and 2019 actual (same for both)
-        power_clear, _, _, _ = simulate(day, t_5min, beta, gamma)
-        _, irr_clear, _, _ = simulate(day, t_5min, beta=0, gamma=gamma)
+            # Clear sky and 2019 actual (same for both)
+            power_clear, _, _, _ = simulate(day, t_5min, beta, gamma)
+            _, irr_clear, _, _ = simulate(day, t_5min, beta=0, gamma=gamma)
 
-        axis1.plot(t_5min, power_clear * 960 / 1000, label='Clear Sky Power', color='blue')
-        axis1.plot(t_15min, cleaned_2019_data[day], linestyle=':', label='2019 Actual Power')
-        axis2.plot(t_5min, irr_clear / 1000, color='red', linestyle=':', label='Clear Irradiance')
+            axis1.plot(t_5min, power_clear * 960 / 1000, label='Clear Sky Power', color='blue')
+            axis1.plot(t_15min, cleaned_2019_data[day], linestyle=':', label='2019 Actual Power', color = 'black')
+            axis2.plot(t_5min, irr_clear / 1000, color='red', linestyle='--', label='Clear Irradiance')
 
-        axis1.set_xlabel('Time of Day (hours)', fontweight='bold')
-        axis1.set_ylabel('Total System Power Delivery (kW)', color='blue', fontweight='bold')
-        axis2.set_ylabel('Irradiance (kW/m^2)', color='orange', fontweight='bold')
-        plt.title(f"Case 4 Irradiance and System Power: {label}", fontweight='bold')
-        axis1.grid(True, alpha=0.6)
+            axis1.set_xlabel('Time of Day (hours)', fontweight='bold')
+            axis1.set_ylabel('Total System Power Delivery (kW)', color='blue', fontweight='bold')
+            axis2.set_ylabel('Irradiance (kW/m^2)', color='orange', fontweight='bold')
+            plt.title(f"Case 4 Irradiance and System Power: {label}", fontweight='bold')
+            axis1.grid(True, alpha=0.6)
 
-        lines1, labels1 = axis1.get_legend_handles_labels()
-        lines2, labels2 = axis2.get_legend_handles_labels()
-        axis1.legend(lines1 + lines2, labels1 + labels2, loc='upper left')
-        plt.show()
+            lines1, labels1 = axis1.get_legend_handles_labels()
+            lines2, labels2 = axis2.get_legend_handles_labels()
+            axis1.legend(lines1 + lines2, labels1 + labels2, loc='upper left')
+            plt.show()
     # </editor-fold>
 
     # <editor-fold desc="Case 5">
@@ -505,8 +507,8 @@ def main():
             plot_case_6_performance(36, 5, scale, 6, cleaned_feb_data, feb_load_data)
 
         # Economic Sensitivity Plots
-        plot_case_6_economics(4, annual_actual_energy, monthly_max)
-        plot_case_6_economics(6, annual_actual_energy, monthly_max)
+        plot_case_6_economics(4, 0)
+        plot_case_6_economics(6, 0)
     # </editor-fold>
 
 
@@ -1417,25 +1419,6 @@ def run_case_6_simulation(N, oci_val, panel_scale, battery_packs, pv_precalc=Non
     }
 
 
-# Economic Model - annual cost from 10 year cost
-def compute_annual_total_cost(results, buy_price, sell_price, battery_packs):
-    # Sum the 5-min steps and convert to kWh
-    energy_imported_kwh = np.sum(results["grid_buy_kw"]) * (5 / 60)
-    energy_exported_kwh = np.sum(results["grid_sell_kw"]) * (5 / 60)
-
-    # Net electricity cost for one day
-    daily_elec_cost = (energy_imported_kwh * buy_price) - (energy_exported_kwh * sell_price)
-
-    # Battery
-    capacity = battery_packs * pack_capacity
-    battery_investment = capacity * 115
-
-    # Maintenance over 10 years (5% of battery cost annually)
-    maint_10yr = 0.05 * battery_investment * 10
-
-    total_10yr = (daily_elec_cost * 365 * 10) + battery_investment + maint_10yr
-    return total_10yr / 10
-
 
 # Plotting functions for Case 6
 def plot_case_6_performance(N, oci_val, panel_scale, battery_packs, actual_pv_kw, actual_load_kw):
@@ -1477,46 +1460,86 @@ def plot_case_6_performance(N, oci_val, panel_scale, battery_packs, actual_pv_kw
     plt.tight_layout()
     plt.show()
 
+def compute_daily_energy(res):
+    buy_kwh = np.sum(res["grid_buy_kw"]) * DT
+    sell_kwh = np.sum(res["grid_sell_kw"]) * DT
+    return buy_kwh, sell_kwh
 
-def plot_case_6_economics(panel_scale, annual_actual_energy, monthly_max):
-    buy_prices = np.linspace(0.06, 0.18, 7)
-    pack_options = [0, 6, 12]
-    sell_back_ratio = [0.5,1.0]
-    t_5min = np.linspace(0, 24, 288)
+def plot_case_6_economics(panel_scale, oci_val):
 
-    # Pre-calculate year of solar to reduce processing time
-    print(f"Pre-calculating solar for {panel_scale}x expansion...")
-    yearly_pv = []
-    for N in range(1, 366):
-        daily_oci = oci(monthly_max, N, annual_actual_energy)
-        yearly_pv.append(get_scaled_pv_power(N, t_5min, panel_scale, daily_oci))
+    buy_prices = np.linspace(0.06, 0.18, 25)
 
-    for packs in pack_options:
-        for ratio in sell_back_ratio:
-            annual_costs = []
-            for buy_p in buy_prices:
-                sell_p=buy_p * ratio
-                total_annual_spend = 0
-                running_soc = 0  # start with empty battery each year
-                for N in range(1, 366):
-                    res = run_case_6_simulation(N, None, panel_scale, packs, pv_precalc=yearly_pv[N - 1], start_soc=running_soc)
-                    import_kwh = np.sum(res["grid_buy_kw"]) * DT
-                    export_kwh = np.sum(res["grid_sell_kw"]) * DT
-                    total_annual_spend += (import_kwh * buy_p) - (export_kwh * sell_p)
-                    running_soc = res["final_soc"]
+    battery_options = [0, 6, 12]
+    sell_multipliers = [0.5, 1.0]
 
-                # 10-year math
-                inv = (packs * 210) * 115
-                maint = 0.05 * inv * 10
-                annual_costs.append(((total_annual_spend * 10) + inv + maint) / 10)
+    #for different load models
+    SUMMER_DAYS = 173
+    WINTER_DAYS = 192
 
-            plt.plot(buy_prices, annual_costs, marker='o', label=f"{packs} Packs, ${ratio}x Sell")
+    plt.figure(figsize=(10,6))
 
-    plt.xlabel('Austin Energy Purchase Price ($/kWh)')
-    plt.ylabel('Average Total Yearly Cost ($)')
-    plt.title(f'Economic Sensitivity Analysis: {panel_scale}x Panel Expansion')
-    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-    plt.grid(True, alpha=0.3)
+    # visual clean up
+    color_map = {
+    0: 'tab:blue',
+    6: 'tab:green',
+    12: 'tab:red'
+    }
+
+    linestyle_map = {
+    0.5: '--',   # dashed
+    1.0: '-'     # solid
+    }
+
+    for packs in battery_options:
+         for mult in sell_multipliers:
+
+            yearly_costs = []
+
+            for buy_price in buy_prices:
+
+                # --- simulate representative days ---
+                res_summer = run_case_6_simulation(200, oci_val, panel_scale, packs)
+                res_winter = run_case_6_simulation(20, oci_val, panel_scale, packs)
+
+                # --- convert to energy (kWh) ---
+                buy_s, sell_s = compute_daily_energy(res_summer)
+                buy_w, sell_w = compute_daily_energy(res_winter)
+
+                annual_buy = buy_s * SUMMER_DAYS + buy_w * WINTER_DAYS
+                annual_sell = sell_s * SUMMER_DAYS + sell_w * WINTER_DAYS
+
+                # --- electricity cost ---
+                sell_price = mult * buy_price
+
+                electricity_cost = (annual_buy * buy_price) - (annual_sell * sell_price)
+
+                label = f"{packs} packs | sell={mult:.1f}x buy"
+
+                # --- battery cost ---
+                battery_capex = packs * 210 * battery_cost
+                maintenance = 0.05 * battery_capex * 10
+
+                total_10yr = electricity_cost * 10 + battery_capex + maintenance
+                annualized_cost = total_10yr / 10
+
+                yearly_costs.append(annualized_cost)
+
+            color = color_map[packs]
+            linestyle = linestyle_map[mult]
+
+            label = f"{packs} packs | {mult:.1f}x sell"
+
+            plt.plot(buy_prices, yearly_costs,
+                color=color,
+                linestyle=linestyle,
+                linewidth=2,
+                label=label)
+
+    plt.xlabel("Electricity Cost from Austin Energy ($/kWh)")
+    plt.ylabel("Average Annual Total Cost ($)")
+    plt.title(f"Case 6 Economics: {panel_scale}x PV System")
+    plt.legend()
+    plt.grid(True, linestyle='--', alpha=0.6)
     plt.tight_layout()
     plt.show()
 
