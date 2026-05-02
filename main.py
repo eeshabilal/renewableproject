@@ -12,12 +12,12 @@ def main():
     # <editor-fold desc="Control Panel">
     """"""""""""""""""""""""""" Control Panel """""""""""""""""""""""""""""
     # For when you're testing stuff and everyone else's work is slowing you down
-    show_case_1 = 1
-    show_case_2 = 1
-    show_case_3 = 1
+    show_case_1 = 0
+    show_case_2 = 0
+    show_case_3 = 0
     show_case_4 = 1
-    show_case_5 = 1
-    show_case_6 = 1
+    show_case_5 = 0
+    show_case_6 = 0
     show_annual_calc = 1
 
     # Relevant days and times
@@ -290,39 +290,52 @@ def main():
             axis2 = axis1.twinx()
 
             day = data["day"]
+            # Get the actual calculated OCI for this day
+            actual_oci = oci(monthly_max, day, annual_actual_energy)
+            print(f"{label}: OCI = {actual_oci:.2f}")
 
-            # power: tilted panel (beta=22, gamma=46) with cloudy/clear sky
+        # December: plot both OCI=10 and actual OCI
+        # June (and others): plot only actual OCI
+        if day == 355:
+            sims_to_plot = [
+                {"oci_val": 10,         "label": "OCI = 10 (Manual)"},
+                {"oci_val": actual_oci, "label": f"OCI = {actual_oci:.2f} (Calculated)"},
+            ]
+        else:
+            sims_to_plot = [
+                {"oci_val": actual_oci, "label": f"OCI = {actual_oci:.2f} (Calculated)"},
+            ]
+
+        for sim in sims_to_plot:
             power_cloudy, _, _, _ = simulate(day, t_5min, beta, gamma,
                                             annual_energy_array=annual_actual_energy,
-                                            monthly_max=monthly_max)
-            power_clear, _, _, _ = simulate(day, t_5min, beta, gamma)
-
-            # irradiance: horizontal panel (beta=0) — this is what a pyranometer measures
+                                            monthly_max=monthly_max,
+                                            OCI_manual=sim["oci_val"])
             _, irr_cloudy, _, _ = simulate(day, t_5min, beta=0, gamma=gamma,
-                                            annual_energy_array=annual_actual_energy,
-                                            monthly_max=monthly_max)
-            _, irr_clear, _, _ = simulate(day, t_5min, beta=0, gamma=gamma)
+                                        annual_energy_array=annual_actual_energy,
+                                        monthly_max=monthly_max,
+                                        OCI_manual=sim["oci_val"])
+            axis1.plot(t_5min, power_cloudy * 960 / 1000, label=f'Cloudy Power ({sim["label"]})')
+            axis2.plot(t_5min, irr_cloudy / 1000, linestyle='--', label=f'Cloudy Irradiance ({sim["label"]})')
 
-            # print OCI for reference
-            oci_val = oci(monthly_max, day, annual_actual_energy)
-            print(f"{label}: OCI = {oci_val:.2f}")
+        # Clear sky and 2019 actual (same for both)
+        power_clear, _, _, _ = simulate(day, t_5min, beta, gamma)
+        _, irr_clear, _, _ = simulate(day, t_5min, beta=0, gamma=gamma)
 
-            axis1.plot(t_5min, power_cloudy * 960 / 1000, label='Cloudy Power', color='steelblue')
-            axis1.plot(t_5min, power_clear * 960 / 1000, label='Clear Sky Power', color='blue', linestyle='--')
-            axis1.plot(t_15min, cleaned_2019_data[day], linestyle=':', label='2019 Actual Power')
-            axis2.plot(t_5min, irr_cloudy / 1000, color='orange', linestyle='--', label='Cloudy Irradiance')
-            axis2.plot(t_5min, irr_clear / 1000, color='gold', linestyle=':', label='Clear Irradiance')
+        axis1.plot(t_5min, power_clear * 960 / 1000, label='Clear Sky Power', color='blue')
+        axis1.plot(t_15min, cleaned_2019_data[day], linestyle=':', label='2019 Actual Power')
+        axis2.plot(t_5min, irr_clear / 1000, color='red', linestyle=':', label='Clear Irradiance')
 
-            axis1.set_xlabel('Time of Day (hours)', fontweight='bold')
-            axis1.set_ylabel('Total System Power Delivery (kW)', color='blue', fontweight='bold')
-            axis2.set_ylabel('Irradiance (kW/m^2)', color='orange', fontweight='bold')
-            plt.title(f"Case 4 Irradiance and System Power: {label}", fontweight='bold')
-            axis1.grid(True, alpha=0.6)
+        axis1.set_xlabel('Time of Day (hours)', fontweight='bold')
+        axis1.set_ylabel('Total System Power Delivery (kW)', color='blue', fontweight='bold')
+        axis2.set_ylabel('Irradiance (kW/m^2)', color='orange', fontweight='bold')
+        plt.title(f"Case 4 Irradiance and System Power: {label}", fontweight='bold')
+        axis1.grid(True, alpha=0.6)
 
-            lines1, labels1 = axis1.get_legend_handles_labels()
-            lines2, labels2 = axis2.get_legend_handles_labels()
-            axis1.legend(lines1 + lines2, labels1 + labels2, loc='upper left')
-            plt.show()
+        lines1, labels1 = axis1.get_legend_handles_labels()
+        lines2, labels2 = axis2.get_legend_handles_labels()
+        axis1.legend(lines1 + lines2, labels1 + labels2, loc='upper left')
+        plt.show()
     # </editor-fold>
 
     # <editor-fold desc="Case 5">
