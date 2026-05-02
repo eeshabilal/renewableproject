@@ -13,9 +13,9 @@ def main():
     """"""""""""""""""""""""""" Control Panel """""""""""""""""""""""""""""
     # For when you're testing stuff and everyone else's work is slowing you down
     show_case_1 = 0
-    show_case_2 = 0
+    show_case_2 = 1
     show_case_3 = 0
-    show_case_4 = 1
+    show_case_4 = 0
     show_case_5 = 0
     show_case_6 = 0
     show_annual_calc = 1
@@ -201,8 +201,9 @@ def main():
 
                 if irr_plot is None:
                     irr_plot = irr_temp
+            flat_panel_irradiance = simulate(day, t_5min, beta=0, gamma=gamma)[1]
             axis1.plot(t_15min, cleaned_2019_data[day], linestyle=':', label='2019 Power')
-            axis2.plot(t_5min, irr_plot / 1000, color='orange', linestyle='--', label='Irradiance')
+            axis2.plot(t_5min, flat_panel_irradiance / 1000, color='orange', linestyle='--', label='Irradiance')
             axis1.set_xlabel('Time of Day (hours)', fontweight='bold')
             axis1.set_ylabel('Total System Power Delivery (kW)', color='blue', fontweight='bold')
             axis2.set_ylabel('Irradiance (kW/m^2)', color='orange', fontweight='bold')
@@ -240,13 +241,15 @@ def main():
         # Irradiance and total system power delivery - December 21
         power_dec, irr_dec, beta_dec = simulate_case_3(355, t_5min, gamma)
         power_dec_no_tracking, irr_dec_no_tracking, _, _ = simulate(355, t_5min, beta, gamma)
-        plot_solar_data(t_5min, power_dec, cleaned_2019_data[355], irr_dec, power_dec_no_tracking, irr_dec_no_tracking,
+        dec_flat_panel_irradiance = simulate(355, t_5min, beta=0, gamma=gamma)[1]
+        plot_solar_data(t_5min, power_dec, cleaned_2019_data[355], dec_flat_panel_irradiance, power_dec_no_tracking,
                         'December 21 - Case 3 Optimized Vertical Tracking')
 
         # Irradiance and total system power delivery - June 21
         power_jun, irr_jun, beta_jun = simulate_case_3(172, t_5min, gamma)
         power_jun_no_tracking, irr_jun_no_tracking, _, _ = simulate(172, t_5min, beta, gamma)
-        plot_solar_data(t_5min, power_jun, cleaned_2019_data[172], irr_jun, power_jun_no_tracking, irr_jun_no_tracking,
+        Jun_flat_panel_irradiance = simulate(172, t_5min, beta=0, gamma=gamma)[1]
+        plot_solar_data(t_5min, power_jun, cleaned_2019_data[172], Jun_flat_panel_irradiance, power_jun_no_tracking,
                         'June 21 - Case 3 Optimized Vertical Tracking')
 
         # Plot Tilt Angle vs time of day - June 21
@@ -696,7 +699,7 @@ def beam_radiation(I_0, tau_b, theta_i):
     return I_0 * tau_b * math.cos(theta_i)
 
 
-def plot_solar_data(t, power_array, real_power_array, irradiance_array, comparison_power=None, comparison_irr=None, day_name=None):
+def plot_solar_data(t, power_array, real_power_array, irradiance_array, comparison_power=None, day_name=None):
 
     t_15min = np.linspace(0, 24, 96)
     fig, ax1 = plt.subplots(figsize=(14, 8))
@@ -733,12 +736,7 @@ def plot_solar_data(t, power_array, real_power_array, irradiance_array, comparis
     # Case 3 irradiance
     ax2.plot(t, irradiance_array / 1000,
              color=color_irr, linestyle='--',
-             label='Tracking Irradiance', linewidth=2)
-
-    if comparison_irr is not None:
-        ax2.plot(t, comparison_irr / 1000,
-                 color='tab:red', linestyle=':',
-                 label='No Tracking Irradiance', linewidth=2)
+             label='Irradiance', linewidth=2)
 
     ax2.tick_params(axis='y', labelcolor=color_irr)
 
@@ -792,7 +790,7 @@ def plot_theta_i(N, theta_i_noon):
 
 def plot_energy(N, energy, actual_energy, no_tracking_energy = None, title='Daily Energy Production vs. Day of the Year'):
     plt.figure(figsize=(10, 6))
-    plt.plot(N, energy, color='c', linewidth=2, label='Daily Energy Production')
+    plt.plot(N, energy, color='c', linewidth=2, label='Tracking Energy Production')
     plt.plot(N, actual_energy, color='b', linewidth=2, label='2019 Energy Production')
     if no_tracking_energy is not None:
         plt.plot(N, no_tracking_energy, color='orange', linewidth=2, label='No Tracking Energy Production')
